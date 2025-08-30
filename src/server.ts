@@ -95,6 +95,52 @@ app.post('/mcp', (req: Request, res: Response) => {
     return { result, sessionId: newSessionId };
   };
 
+  const handleToolsList = (msg: any) => {
+    const id = msg.id;
+    const result = {
+      jsonrpc: '2.0',
+      id,
+      result: {
+        tools: [
+          {
+            name: 'echo',
+            description: 'Echo back the provided text',
+            inputSchema: {
+              type: 'object',
+              properties: { text: { type: 'string', description: 'Text to echo' } },
+              required: ['text'],
+              additionalProperties: false,
+            },
+          },
+        ],
+      },
+    };
+    return result;
+  };
+
+  const handleToolsCall = (msg: any) => {
+    const id = msg.id;
+    const name = msg?.params?.name;
+    const args = msg?.params?.arguments ?? {};
+    if (name === 'echo') {
+      const text = typeof args.text === 'string' ? args.text : JSON.stringify(args);
+      return {
+        jsonrpc: '2.0',
+        id,
+        result: {
+          content: [
+            { type: 'text', text },
+          ],
+        },
+      };
+    }
+    return {
+      jsonrpc: '2.0',
+      id,
+      error: { code: -32601, message: `Tool not found: ${name}` },
+    };
+  };
+
   // If client can accept SSE, stream
   if (wantsSse) {
     sseHeaders(res);
@@ -108,6 +154,14 @@ app.post('/mcp', (req: Request, res: Response) => {
         if (!assignedSession) assignedSession = sid;
         const eventId = `${sid}:init:${msg.id}`;
         writeSse(res, result, eventId);
+      } else if (msg?.method === 'tools/list') {
+        const out = handleToolsList(msg);
+        const sid = assignedSession || sessionId || cryptoRandomId();
+        writeSse(res, out, `${sid}:tools-list:${msg.id}`);
+      } else if (msg?.method === 'tools/call') {
+        const out = handleToolsCall(msg);
+        const sid = assignedSession || sessionId || cryptoRandomId();
+        writeSse(res, out, `${sid}:tools-call:${msg.id}`);
       } else if (msg && msg.id && msg.method) {
         // Unknown method -> respond with error later or noop
         const error = {
@@ -135,6 +189,12 @@ app.post('/mcp', (req: Request, res: Response) => {
       const { result, sessionId: sid } = handleInitialize(msg);
       res.setHeader('Mcp-Session-Id', sid);
       return sendJson(res, result);
+    } else if (msg?.method === 'tools/list') {
+      const out = handleToolsList(msg);
+      return sendJson(res, out);
+    } else if (msg?.method === 'tools/call') {
+      const out = handleToolsCall(msg);
+      return sendJson(res, out);
     }
   }
 
