@@ -32,7 +32,8 @@ paths:
                 type: string
                 description: JSON-RPC method (initialize, tools/list, tools/call)
               id:
-                type: [string, integer]
+                type: string
+                description: JSON-RPC id (string or integer). Represented as string here for Swagger 2.0 compatibility.
               params:
                 type: object
             required: [jsonrpc, method]
