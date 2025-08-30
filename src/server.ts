@@ -230,6 +230,16 @@ const mcpHandler = (req: Request, res: Response) => {
             },
           },
           {
+            name: 'confluence.trashPage',
+            description: 'Move a page to trash (soft delete, not permanent)',
+            inputSchema: {
+              type: 'object',
+              properties: { id: { type: 'string', description: 'Page ID' } },
+              required: ['id'],
+              additionalProperties: false,
+            },
+          },
+          {
             name: 'confluence.getPage',
             description: 'Get a page by ID with content',
             inputSchema: {
@@ -264,12 +274,32 @@ const mcpHandler = (req: Request, res: Response) => {
             },
           },
           {
+            name: 'confluence.getLabels',
+            description: 'List labels on a page',
+            inputSchema: {
+              type: 'object',
+              properties: { id: { type: 'string', description: 'Page ID' }, limit: { type: 'number', description: 'Max labels (default 25, max 100)' } },
+              required: ['id'],
+              additionalProperties: false,
+            },
+          },
+          {
             name: 'confluence.addComment',
             description: 'Create a comment on a page',
             inputSchema: {
               type: 'object',
               properties: { id: { type: 'string', description: 'Page ID' }, body: { type: 'string', description: 'Comment body in storage (HTML)' } },
               required: ['id', 'body'],
+              additionalProperties: false,
+            },
+          },
+          {
+            name: 'confluence.listAttachments',
+            description: 'List attachments on a page',
+            inputSchema: {
+              type: 'object',
+              properties: { id: { type: 'string', description: 'Page ID' }, limit: { type: 'number', description: 'Max attachments (default 25, max 100)' } },
+              required: ['id'],
               additionalProperties: false,
             },
           },
@@ -323,9 +353,12 @@ const mcpHandler = (req: Request, res: Response) => {
         "- confluence.summarizePage: Find a page by title and return content (query, optional spaceKey)",
         "- confluence.createPage: Create a page (spaceKey, title, body, optional parentId)",
   "- confluence.updatePage: Update a page (id, optional title/body)",
+  "- confluence.trashPage: Move a page to trash (id)",
   "- confluence.getPage: Get a page by id",
   "- confluence.listChildren: List children (id, optional type, limit)",
   "- confluence.listComments: List comments on a page",
+  "- confluence.listAttachments: List attachments on a page",
+  "- confluence.getLabels: List labels on a page",
   "- confluence.addComment: Add a comment to a page",
   "- confluence.updateComment: Update an existing comment",
   "- confluence.search: Search using CQL",
@@ -354,9 +387,12 @@ const mcpHandler = (req: Request, res: Response) => {
       name === 'confluence.summarizePage' ||
       name === 'confluence.createPage' ||
       name === 'confluence.updatePage' ||
+  name === 'confluence.trashPage' ||
       name === 'confluence.getPage' ||
       name === 'confluence.listChildren' ||
       name === 'confluence.listComments' ||
+  name === 'confluence.listAttachments' ||
+  name === 'confluence.getLabels' ||
       name === 'confluence.addComment' ||
       name === 'confluence.updateComment' ||
       name === 'confluence.search' ||
@@ -599,6 +635,14 @@ async function handleConfluenceAsync(msg: any): Promise<any> {
       const url = conf.baseUrl + 'wiki' + (updated?._links?.webui || '');
       return { id: updated?.id, title: updated?.title, url };
     }
+    if (name === 'confluence.trashPage') {
+      const pageId = String(args.id || '').trim();
+      if (!pageId) return { message: 'id is required' };
+      const delUrl = `${conf.baseUrl}/wiki/rest/api/content/${pageId}`;
+      const dr = await safeFetchJson(delUrl, { method: 'DELETE', headers: h() });
+      if (!dr.ok) return { message: dr.status === 404 ? 'Page not found.' : dr.status === 403 || dr.status === 401 ? 'Not authorized to trash page.' : `Trash page failed: HTTP ${dr.status}` };
+      return { id: pageId, message: 'Page moved to trash.' };
+    }
     if (name === 'confluence.getPage') {
       const pageId = String(args.id || '').trim();
       if (!pageId) return { message: 'id is required' };
@@ -633,6 +677,34 @@ async function handleConfluenceAsync(msg: any): Promise<any> {
       const comments = (r.data?.results || []).map((c: any) => ({ id: c.id, version: c?.version?.number, text: htmlToText(c?.body?.storage?.value || '').slice(0, 1000) }));
       if (!comments.length) return { comments: [], message: 'No comments found.' };
       return { comments };
+    }
+    if (name === 'confluence.listAttachments') {
+      const pageId = String(args.id || '').trim();
+      const limit = Math.min(Math.max(Number(args.limit) || 25, 1), 100);
+      if (!pageId) return { message: 'id is required' };
+      const url = `${conf.baseUrl}/wiki/rest/api/content/${pageId}/child/attachment?limit=${limit}`;
+      const r = await safeFetchJson(url, { headers: h() });
+      if (!r.ok) return { message: r.status === 404 ? 'Page not found.' : `List attachments failed: HTTP ${r.status}` };
+      const attachments = (r.data?.results || []).map((a: any) => ({
+        id: a.id,
+        title: a.title,
+        mediaType: a?.metadata?.mediaType,
+        fileSize: a?.extensions?.fileSize,
+        downloadUrl: conf.baseUrl + 'wiki' + (a?._links?.download || ''),
+      }));
+      if (!attachments.length) return { attachments: [], message: 'No attachments found.' };
+      return { attachments };
+    }
+    if (name === 'confluence.getLabels') {
+      const pageId = String(args.id || '').trim();
+      const limit = Math.min(Math.max(Number(args.limit) || 25, 1), 100);
+      if (!pageId) return { message: 'id is required' };
+      const url = `${conf.baseUrl}/wiki/rest/api/content/${pageId}/label?limit=${limit}`;
+      const r = await safeFetchJson(url, { headers: h() });
+      if (!r.ok) return { message: r.status === 404 ? 'Page not found.' : `Get labels failed: HTTP ${r.status}` };
+      const labels = (r.data?.results || []).map((l: any) => ({ name: l?.name, prefix: l?.prefix }));
+      if (!labels.length) return { labels: [], message: 'No labels found.' };
+      return { labels };
     }
     if (name === 'confluence.addComment') {
       const pageId = String(args.id || '').trim();
