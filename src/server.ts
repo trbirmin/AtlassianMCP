@@ -174,6 +174,19 @@ const mcpHandler = (req: Request, res: Response) => {
             },
           },
           {
+            name: 'confluence.listPages',
+            description: 'List pages within a Confluence space',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                spaceKey: { type: 'string', description: 'Confluence space key' },
+                limit: { type: 'number', description: 'Max pages to return (default 25, max 100)' },
+              },
+              required: ['spaceKey'],
+              additionalProperties: false,
+            },
+          },
+          {
             name: 'confluence.summarizePage',
             description: 'Find a Confluence page by title query and return its content for summarization',
             inputSchema: {
@@ -306,6 +319,7 @@ const mcpHandler = (req: Request, res: Response) => {
         '- help: Show this help.',
         "- echo: Echo back text. Usage: name='echo', arguments: { text: 'Hello' }",
         "- confluence.listSpaces: List spaces (optional: limit)",
+  "- confluence.listPages: List pages in a space (spaceKey, optional limit)",
         "- confluence.summarizePage: Find a page by title and return content (query, optional spaceKey)",
         "- confluence.createPage: Create a page (spaceKey, title, body, optional parentId)",
   "- confluence.updatePage: Update a page (id, optional title/body)",
@@ -335,7 +349,8 @@ const mcpHandler = (req: Request, res: Response) => {
         },
       };
     } else if (
-      name === 'confluence.listSpaces' ||
+  name === 'confluence.listSpaces' ||
+  name === 'confluence.listPages' ||
       name === 'confluence.summarizePage' ||
       name === 'confluence.createPage' ||
       name === 'confluence.updatePage' ||
@@ -519,6 +534,17 @@ async function handleConfluenceAsync(msg: any): Promise<any> {
       if (!items.length) return { spaces: [], message: 'No spaces found.' };
       return { spaces: items };
     }
+    if (name === 'confluence.listPages') {
+      const spaceKey = String(args.spaceKey || '').trim();
+      const limit = Math.min(Math.max(Number(args.limit) || 25, 1), 100);
+      if (!spaceKey) return { message: 'spaceKey is required' };
+      const url = `${conf.baseUrl}/wiki/rest/api/content?spaceKey=${encodeURIComponent(spaceKey)}&type=page&limit=${limit}`;
+      const r = await safeFetchJson(url, { headers: h() });
+      if (!r.ok) return { message: r.status === 404 ? 'Space not found.' : `List pages failed: HTTP ${r.status}` };
+      const pages = (r.data?.results || []).map((p: any) => ({ id: p.id, title: p.title, url: conf.baseUrl + 'wiki' + (p?._links?.webui || '') }));
+      if (!pages.length) return { pages: [], message: 'No pages found in space.' };
+      return { pages };
+    }
     if (name === 'confluence.summarizePage') {
       const query = String(args.query || '').trim();
       const spaceKey = args.spaceKey ? String(args.spaceKey) : undefined;
@@ -652,7 +678,7 @@ async function handleConfluenceAsync(msg: any): Promise<any> {
       const r = await safeFetchJson(url, { headers: h() });
       if (!r.ok) return { message: r.status === 404 ? 'Space not found.' : `Get space failed: HTTP ${r.status}` };
       const space = r.data;
-      const urlOut = conf.baseUrl + (space?._links?.webui || '');
+      const urlOut = conf.baseUrl + 'wiki' + (space?._links?.webui || '');
       return { key: space?.key, name: space?.name, url: urlOut, id: space?.id };
     }
     if (name === 'confluence.me') {
