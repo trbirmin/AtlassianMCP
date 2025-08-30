@@ -493,181 +493,179 @@ async function handleConfluenceAsync(msg: any): Promise<any> {
   if (!conf) {
     return { message: 'Confluence is not configured. Set CONFLUENCE_BASE_URL, CONFLUENCE_EMAIL, CONFLUENCE_API_TOKEN.' };
   }
-  // Helper for authenticated fetch
+  // Helper for authenticated fetch and friendly errors
   const h = (extra?: any) => ({ Authorization: `Basic ${conf.auth}`, Accept: 'application/json', ...(extra || {}) } as any);
-  if (name === 'confluence.listSpaces') {
-    const limit = Math.min(Math.max(Number(args.limit) || 20, 1), 100);
-    const url = `${conf.baseUrl}/wiki/rest/api/space?limit=${limit}`;
-    const r = await fetch(url, { headers: h() });
-    if (!r.ok) throw new Error(`List spaces failed: ${r.status}`);
-    const data = await r.json();
-    const items = (data?.results || []).map((s: any) => ({ key: s.key, name: s.name, id: s.id, url: conf.baseUrl + (s?._links?.webui || '') }));
-    return { spaces: items };
-  }
-  if (name === 'confluence.summarizePage') {
-    const query = String(args.query || '').trim();
-    const spaceKey = args.spaceKey ? String(args.spaceKey) : undefined;
-    if (!query) throw new Error('query is required');
-    const cql = `type=page AND title ~ "${query.replace(/"/g, '\\"')}"` + (spaceKey ? ` AND space=${spaceKey}` : '');
-    const searchUrl = `${conf.baseUrl}/wiki/rest/api/search?cql=${encodeURIComponent(cql)}&limit=1`;
-  const sr = await fetch(searchUrl, { headers: h() });
-    if (!sr.ok) throw new Error(`Search failed: ${sr.status}`);
-    const sdata = await sr.json();
-    const hit = sdata?.results?.[0];
-    if (!hit) return { message: 'No page found for query.' };
-    // Retrieve content by id
-    const id = hit?.content?.id || hit?.id;
-    const getUrl = `${conf.baseUrl}/wiki/rest/api/content/${id}?expand=body.storage,version,space`;
-  const gr = await fetch(getUrl, { headers: h() });
-    if (!gr.ok) throw new Error(`Get page failed: ${gr.status}`);
-    const page = await gr.json();
-    const storage = page?.body?.storage?.value || '';
-    const text = htmlToText(storage).slice(0, 8000);
-    const url = conf.baseUrl + 'wiki' + (page?._links?.webui || '');
-    return { id, title: page?.title, url, excerpt: text.slice(0, 1000), content: text };
-  }
-  if (name === 'confluence.createPage') {
-    const spaceKey = String(args.spaceKey || '').trim();
-    const title = String(args.title || '').trim();
-    const body = String(args.body || '');
-    const parentId = args.parentId ? String(args.parentId) : undefined;
-    if (!spaceKey || !title || !body) throw new Error('spaceKey, title, and body are required');
-    const postUrl = `${conf.baseUrl}/wiki/rest/api/content`;
-    const payload: any = {
-      type: 'page',
-      title,
-      space: { key: spaceKey },
-      body: { storage: { value: body, representation: 'storage' } },
-    };
-    if (parentId) {
-      payload.ancestors = [{ id: parentId }];
+  const safeFetchJson = async (url: string, init?: any) => {
+    try {
+      const r = await fetch(url, init);
+      const ct = r.headers.get('content-type') || '';
+      const data = ct.includes('application/json') ? await r.json().catch(() => undefined) : await r.text().catch(() => undefined);
+      return { ok: r.ok, status: r.status, data } as { ok: boolean; status: number; data: any };
+    } catch (e: any) {
+      return { ok: false, status: 0, data: { message: e?.message || String(e) } };
     }
-    const pr = await fetch(postUrl, {
-      method: 'POST',
-      headers: h({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify(payload),
-    });
-    if (!pr.ok) throw new Error(`Create page failed: ${pr.status}`);
-    const created = await pr.json();
-    const url = conf.baseUrl +'wiki' + (created?._links?.webui || '');
-    return { id: created?.id, title: created?.title, url };
+  };
+
+  try {
+    if (name === 'confluence.listSpaces') {
+      const limit = Math.min(Math.max(Number(args.limit) || 20, 1), 100);
+      const url = `${conf.baseUrl}/wiki/rest/api/space?limit=${limit}`;
+      const r = await safeFetchJson(url, { headers: h() });
+      if (!r.ok) {
+        if (r.status === 401 || r.status === 403) return { message: 'Confluence authentication failed. Check credentials.' };
+        return { message: `List spaces failed: HTTP ${r.status}` };
+      }
+      const items = (r.data?.results || []).map((s: any) => ({ key: s.key, name: s.name, id: s.id, url: conf.baseUrl + (s?._links?.webui || '') }));
+      if (!items.length) return { spaces: [], message: 'No spaces found.' };
+      return { spaces: items };
+    }
+    if (name === 'confluence.summarizePage') {
+      const query = String(args.query || '').trim();
+      const spaceKey = args.spaceKey ? String(args.spaceKey) : undefined;
+      if (!query) return { message: 'query is required' };
+      const cql = `type=page AND title ~ "${query.replace(/"/g, '\\"')}"` + (spaceKey ? ` AND space=${spaceKey}` : '');
+      const searchUrl = `${conf.baseUrl}/wiki/rest/api/search?cql=${encodeURIComponent(cql)}&limit=1`;
+      const sr = await safeFetchJson(searchUrl, { headers: h() });
+      if (!sr.ok) return { message: `Search failed: HTTP ${sr.status}` };
+      const hit = sr.data?.results?.[0];
+      if (!hit) return { message: 'No page found for query.' };
+      const id = hit?.content?.id || hit?.id;
+      const getUrl = `${conf.baseUrl}/wiki/rest/api/content/${id}?expand=body.storage,version,space`;
+      const gr = await safeFetchJson(getUrl, { headers: h() });
+      if (!gr.ok) return { message: `Get page failed: HTTP ${gr.status}` };
+      const page = gr.data;
+      const storage = page?.body?.storage?.value || '';
+      const text = htmlToText(storage).slice(0, 8000);
+      const url = conf.baseUrl + 'wiki' + (page?._links?.webui || '');
+      return { id, title: page?.title, url, excerpt: text.slice(0, 1000), content: text };
+    }
+    if (name === 'confluence.createPage') {
+      const spaceKey = String(args.spaceKey || '').trim();
+      const title = String(args.title || '').trim();
+      const body = String(args.body || '');
+      const parentId = args.parentId ? String(args.parentId) : undefined;
+      if (!spaceKey || !title || !body) return { message: 'spaceKey, title, and body are required' };
+      const postUrl = `${conf.baseUrl}/wiki/rest/api/content`;
+      const payload: any = { type: 'page', title, space: { key: spaceKey }, body: { storage: { value: body, representation: 'storage' } } };
+      if (parentId) payload.ancestors = [{ id: parentId }];
+      const pr = await safeFetchJson(postUrl, { method: 'POST', headers: h({ 'Content-Type': 'application/json' }), body: JSON.stringify(payload) });
+      if (!pr.ok) return { message: `Create page failed: HTTP ${pr.status}` };
+      const created = pr.data;
+      const url = conf.baseUrl + 'wiki' + (created?._links?.webui || '');
+      return { id: created?.id, title: created?.title, url };
+    }
+    if (name === 'confluence.updatePage') {
+      const pageId = String(args.id || '').trim();
+      const newTitle = args.title ? String(args.title) : undefined;
+      const newBody = args.body ? String(args.body) : undefined;
+      const minorEdit = !!args.minorEdit;
+      if (!pageId) return { message: 'id is required' };
+      const getUrl = `${conf.baseUrl}/wiki/rest/api/content/${pageId}?expand=body.storage,version`;
+      const gr = await safeFetchJson(getUrl, { headers: h() });
+      if (!gr.ok) return { message: gr.status === 404 ? 'Page not found.' : `Get page failed: HTTP ${gr.status}` };
+      const page = gr.data;
+      const nextVersion = (page?.version?.number || 0) + 1;
+      const putUrl = `${conf.baseUrl}/wiki/rest/api/content/${pageId}`;
+      const payload: any = { id: pageId, type: 'page', title: newTitle || page?.title, version: { number: nextVersion, minorEdit }, body: newBody ? { storage: { value: newBody, representation: 'storage' } } : undefined };
+      const ur = await safeFetchJson(putUrl, { method: 'PUT', headers: h({ 'Content-Type': 'application/json' }), body: JSON.stringify(payload) });
+      if (!ur.ok) return { message: `Update page failed: HTTP ${ur.status}` };
+      const updated = ur.data;
+      const url = conf.baseUrl + 'wiki' + (updated?._links?.webui || '');
+      return { id: updated?.id, title: updated?.title, url };
+    }
+    if (name === 'confluence.getPage') {
+      const pageId = String(args.id || '').trim();
+      if (!pageId) return { message: 'id is required' };
+      const getUrl = `${conf.baseUrl}/wiki/rest/api/content/${pageId}?expand=body.storage,version,space`;
+      const gr = await safeFetchJson(getUrl, { headers: h() });
+      if (!gr.ok) return { message: gr.status === 404 ? 'Page not found.' : `Get page failed: HTTP ${gr.status}` };
+      const page = gr.data;
+      const storage = page?.body?.storage?.value || '';
+      const text = htmlToText(storage).slice(0, 8000);
+      const url = conf.baseUrl + 'wiki' + (page?._links?.webui || '');
+      return { id: page?.id, title: page?.title, url, content: text };
+    }
+    if (name === 'confluence.listChildren') {
+      const pageId = String(args.id || '').trim();
+      const type = (String(args.type || 'page') as 'page' | 'comment' | 'attachment');
+      const limit = Math.min(Math.max(Number(args.limit) || 25, 1), 100);
+      if (!pageId) return { message: 'id is required' };
+      const url = `${conf.baseUrl}/wiki/rest/api/content/${pageId}/child/${type}?expand=body.storage&limit=${limit}`;
+      const r = await safeFetchJson(url, { headers: h() });
+      if (!r.ok) return { message: r.status === 404 ? 'Page not found.' : `List children failed: HTTP ${r.status}` };
+      const items = (r.data?.results || []).map((c: any) => ({ id: c.id, type: c.type, title: c.title, excerpt: htmlToText(c?.body?.storage?.value || '').slice(0, 400) }));
+      if (!items.length) return { items: [], message: `No ${type} children found.` };
+      return { items };
+    }
+    if (name === 'confluence.listComments') {
+      const pageId = String(args.id || '').trim();
+      const limit = Math.min(Math.max(Number(args.limit) || 25, 1), 100);
+      if (!pageId) return { message: 'id is required' };
+      const url = `${conf.baseUrl}/wiki/rest/api/content/${pageId}/child/comment?expand=body.storage,version&limit=${limit}`;
+      const r = await safeFetchJson(url, { headers: h() });
+      if (!r.ok) return { message: r.status === 404 ? 'Page not found.' : `List comments failed: HTTP ${r.status}` };
+      const comments = (r.data?.results || []).map((c: any) => ({ id: c.id, version: c?.version?.number, text: htmlToText(c?.body?.storage?.value || '').slice(0, 1000) }));
+      if (!comments.length) return { comments: [], message: 'No comments found.' };
+      return { comments };
+    }
+    if (name === 'confluence.addComment') {
+      const pageId = String(args.id || '').trim();
+      const body = String(args.body || '');
+      if (!pageId || !body) return { message: 'id and body are required' };
+      const postUrl = `${conf.baseUrl}/wiki/rest/api/content`;
+      const payload = { type: 'comment', container: { id: pageId, type: 'page' }, body: { storage: { value: body, representation: 'storage' } } } as any;
+      const pr = await safeFetchJson(postUrl, { method: 'POST', headers: h({ 'Content-Type': 'application/json' }), body: JSON.stringify(payload) });
+      if (!pr.ok) return { message: pr.status === 404 ? 'Page not found.' : `Add comment failed: HTTP ${pr.status}` };
+      const created = pr.data;
+      return { id: created?.id };
+    }
+    if (name === 'confluence.updateComment') {
+      const commentId = String(args.id || '').trim();
+      const body = String(args.body || '');
+      if (!commentId || !body) return { message: 'id and body are required' };
+      const getUrl = `${conf.baseUrl}/wiki/rest/api/content/${commentId}?expand=version`;
+      const gr = await safeFetchJson(getUrl, { headers: h() });
+      if (!gr.ok) return { message: gr.status === 404 ? 'Comment not found.' : `Get comment failed: HTTP ${gr.status}` };
+      const comment = gr.data;
+      const nextVersion = (comment?.version?.number || 0) + 1;
+      const putUrl = `${conf.baseUrl}/wiki/rest/api/content/${commentId}`;
+      const payload = { id: commentId, type: 'comment', version: { number: nextVersion }, body: { storage: { value: body, representation: 'storage' } } } as any;
+      const ur = await safeFetchJson(putUrl, { method: 'PUT', headers: h({ 'Content-Type': 'application/json' }), body: JSON.stringify(payload) });
+      if (!ur.ok) return { message: `Update comment failed: HTTP ${ur.status}` };
+      return { id: commentId };
+    }
+    if (name === 'confluence.search') {
+      const cql = String(args.cql || '').trim();
+      const limit = Math.min(Math.max(Number(args.limit) || 10, 1), 100);
+      if (!cql) return { message: 'cql is required' };
+      const url = `${conf.baseUrl}/wiki/rest/api/search?cql=${encodeURIComponent(cql)}&limit=${limit}`;
+      const r = await safeFetchJson(url, { headers: h() });
+      if (!r.ok) return { message: `Search failed: HTTP ${r.status}` };
+      const results = (r.data?.results || []).map((x: any) => ({ id: x?.content?.id || x?.id, title: x?.title || x?.content?.title, url: conf.baseUrl + 'wiki' + (x?._links?.webui || ''), type: x?.content?._expandable?.type || x?.content?.type }));
+      if (!results.length) return { results: [], message: 'No search results found.' };
+      return { results };
+    }
+    if (name === 'confluence.getSpace') {
+      const key = String(args.key || '').trim();
+      if (!key) return { message: 'key is required' };
+      const url = `${conf.baseUrl}/wiki/rest/api/space/${encodeURIComponent(key)}`;
+      const r = await safeFetchJson(url, { headers: h() });
+      if (!r.ok) return { message: r.status === 404 ? 'Space not found.' : `Get space failed: HTTP ${r.status}` };
+      const space = r.data;
+      const urlOut = conf.baseUrl + (space?._links?.webui || '');
+      return { key: space?.key, name: space?.name, url: urlOut, id: space?.id };
+    }
+    if (name === 'confluence.me') {
+      const url = `${conf.baseUrl}/wiki/rest/api/user/current`;
+      const r = await safeFetchJson(url, { headers: h() });
+      if (!r.ok) return { message: r.status === 401 || r.status === 403 ? 'Not authorized to get current user.' : `Get current user failed: HTTP ${r.status}` };
+      const me = r.data;
+      return { accountId: me?.accountId, email: me?.email, displayName: me?.displayName, username: me?.username };
+    }
+    return { message: `Unsupported Confluence tool: ${name}` };
+  } catch (e: any) {
+    return { message: e?.message || 'Confluence operation failed.' };
   }
-  if (name === 'confluence.updatePage') {
-    const pageId = String(args.id || '').trim();
-    const newTitle = args.title ? String(args.title) : undefined;
-    const newBody = args.body ? String(args.body) : undefined;
-    const minorEdit = !!args.minorEdit;
-    if (!pageId) throw new Error('id is required');
-    const getUrl = `${conf.baseUrl}/wiki/rest/api/content/${pageId}?expand=body.storage,version`;
-    const gr = await fetch(getUrl, { headers: h() });
-    if (!gr.ok) throw new Error(`Get page failed: ${gr.status}`);
-    const page = await gr.json();
-    const nextVersion = (page?.version?.number || 0) + 1;
-    const putUrl = `${conf.baseUrl}/wiki/rest/api/content/${pageId}`;
-    const payload: any = {
-      id: pageId,
-      type: 'page',
-      title: newTitle || page?.title,
-      version: { number: nextVersion, minorEdit },
-      body: newBody ? { storage: { value: newBody, representation: 'storage' } } : undefined,
-    };
-    const ur = await fetch(putUrl, { method: 'PUT', headers: h({ 'Content-Type': 'application/json' }), body: JSON.stringify(payload) });
-    if (!ur.ok) throw new Error(`Update page failed: ${ur.status}`);
-    const updated = await ur.json();
-    const url = conf.baseUrl + 'wiki' + (updated?._links?.webui || '');
-    return { id: updated?.id, title: updated?.title, url };
-  }
-  if (name === 'confluence.getPage') {
-    const pageId = String(args.id || '').trim();
-    if (!pageId) throw new Error('id is required');
-    const getUrl = `${conf.baseUrl}/wiki/rest/api/content/${pageId}?expand=body.storage,version,space`;
-    const gr = await fetch(getUrl, { headers: h() });
-    if (!gr.ok) throw new Error(`Get page failed: ${gr.status}`);
-    const page = await gr.json();
-    const storage = page?.body?.storage?.value || '';
-    const text = htmlToText(storage).slice(0, 8000);
-    const url = conf.baseUrl + 'wiki' + (page?._links?.webui || '');
-    return { id: page?.id, title: page?.title, url, content: text };
-  }
-  if (name === 'confluence.listChildren') {
-    const pageId = String(args.id || '').trim();
-    const type = (String(args.type || 'page') as 'page' | 'comment' | 'attachment');
-    const limit = Math.min(Math.max(Number(args.limit) || 25, 1), 100);
-    if (!pageId) throw new Error('id is required');
-    const url = `${conf.baseUrl}/wiki/rest/api/content/${pageId}/child/${type}?expand=body.storage&limit=${limit}`;
-    const r = await fetch(url, { headers: h() });
-    if (!r.ok) throw new Error(`List children failed: ${r.status}`);
-    const data = await r.json();
-    const items = (data?.results || []).map((c: any) => ({ id: c.id, type: c.type, title: c.title, excerpt: htmlToText(c?.body?.storage?.value || '').slice(0, 400) }));
-    return { items };
-  }
-  if (name === 'confluence.listComments') {
-    const pageId = String(args.id || '').trim();
-    const limit = Math.min(Math.max(Number(args.limit) || 25, 1), 100);
-    if (!pageId) throw new Error('id is required');
-    const url = `${conf.baseUrl}/wiki/rest/api/content/${pageId}/child/comment?expand=body.storage,version&limit=${limit}`;
-    const r = await fetch(url, { headers: h() });
-    if (!r.ok) throw new Error(`List comments failed: ${r.status}`);
-    const data = await r.json();
-    const comments = (data?.results || []).map((c: any) => ({ id: c.id, version: c?.version?.number, text: htmlToText(c?.body?.storage?.value || '').slice(0, 1000) }));
-    return { comments };
-  }
-  if (name === 'confluence.addComment') {
-    const pageId = String(args.id || '').trim();
-    const body = String(args.body || '');
-    if (!pageId || !body) throw new Error('id and body are required');
-    const postUrl = `${conf.baseUrl}/wiki/rest/api/content`;
-    const payload = { type: 'comment', container: { id: pageId, type: 'page' }, body: { storage: { value: body, representation: 'storage' } } } as any;
-    const pr = await fetch(postUrl, { method: 'POST', headers: h({ 'Content-Type': 'application/json' }), body: JSON.stringify(payload) });
-    if (!pr.ok) throw new Error(`Add comment failed: ${pr.status}`);
-    const created = await pr.json();
-    return { id: created?.id };
-  }
-  if (name === 'confluence.updateComment') {
-    const commentId = String(args.id || '').trim();
-    const body = String(args.body || '');
-    if (!commentId || !body) throw new Error('id and body are required');
-    // get current version
-    const getUrl = `${conf.baseUrl}/wiki/rest/api/content/${commentId}?expand=version`;
-    const gr = await fetch(getUrl, { headers: h() });
-    if (!gr.ok) throw new Error(`Get comment failed: ${gr.status}`);
-    const comment = await gr.json();
-    const nextVersion = (comment?.version?.number || 0) + 1;
-    const putUrl = `${conf.baseUrl}/wiki/rest/api/content/${commentId}`;
-    const payload = { id: commentId, type: 'comment', version: { number: nextVersion }, body: { storage: { value: body, representation: 'storage' } } } as any;
-    const ur = await fetch(putUrl, { method: 'PUT', headers: h({ 'Content-Type': 'application/json' }), body: JSON.stringify(payload) });
-    if (!ur.ok) throw new Error(`Update comment failed: ${ur.status}`);
-    return { id: commentId };
-  }
-  if (name === 'confluence.search') {
-    const cql = String(args.cql || '').trim();
-    const limit = Math.min(Math.max(Number(args.limit) || 10, 1), 100);
-    if (!cql) throw new Error('cql is required');
-    const url = `${conf.baseUrl}/wiki/rest/api/search?cql=${encodeURIComponent(cql)}&limit=${limit}`;
-    const r = await fetch(url, { headers: h() });
-    if (!r.ok) throw new Error(`Search failed: ${r.status}`);
-    const data = await r.json();
-    const results = (data?.results || []).map((x: any) => ({ id: x?.content?.id || x?.id, title: x?.title || x?.content?.title, url: conf.baseUrl + 'wiki' + (x?._links?.webui || ''), type: x?.content?._expandable?.type || x?.content?.type }));
-    return { results };
-  }
-  if (name === 'confluence.getSpace') {
-    const key = String(args.key || '').trim();
-    if (!key) throw new Error('key is required');
-    const url = `${conf.baseUrl}/wiki/rest/api/space/${encodeURIComponent(key)}`;
-    const r = await fetch(url, { headers: h() });
-    if (!r.ok) throw new Error(`Get space failed: ${r.status}`);
-    const space = await r.json();
-    const urlOut = conf.baseUrl + (space?._links?.webui || '');
-    return { key: space?.key, name: space?.name, url: urlOut, id: space?.id };
-  }
-  if (name === 'confluence.me') {
-    const url = `${conf.baseUrl}/wiki/rest/api/user/current`;
-    const r = await fetch(url, { headers: h() });
-    if (!r.ok) throw new Error(`Get current user failed: ${r.status}`);
-    const me = await r.json();
-    return { accountId: me?.accountId, email: me?.email, displayName: me?.displayName, username: me?.username };
-  }
-  throw new Error(`Unsupported Confluence tool: ${name}`);
 }
 
 function toErr(e: any) {
