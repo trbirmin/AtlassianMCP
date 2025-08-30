@@ -42,6 +42,7 @@ paths:
           description: Success
     get:
       summary: Server-Sent Events stream (optional)
+  operationId: StreamMCP
       produces:
         - text/event-stream
       responses:
