@@ -54,9 +54,15 @@ const mcpHandler = (req: Request, res: Response) => {
   const sessionId = req.header('Mcp-Session-Id');
 
   // If only notifications/responses: accept and return 202 per spec
-  const body = req.body;
-  const isArray = Array.isArray(body);
-  const items = isArray ? body : [body];
+  // Unwrap APIM/connector wrapper shapes (e.g., { queryRequest: [...] })
+  const rawBody = req.body;
+  const payload = (rawBody && typeof rawBody === 'object')
+    ? (('queryRequest' in rawBody) ? (rawBody as any).queryRequest
+      : (('requests' in rawBody) ? (rawBody as any).requests
+        : (('body' in rawBody && (rawBody as any).body?.jsonrpc) ? (rawBody as any).body : rawBody)))
+    : rawBody;
+  const isArray = Array.isArray(payload);
+  const items = isArray ? payload : [payload];
   const hasRequests = items.some((m: any) => m && typeof m === 'object' && 'method' in m && 'id' in m);
   const hasOnlyNoReq = items.every((m: any) => m && typeof m === 'object' && (!('method' in m) || !('id' in m)));
 
@@ -218,10 +224,13 @@ const mcpHandler = (req: Request, res: Response) => {
     }
   }
 
-  // No supported request
-  return res.status(400).json({
-    error: 'Unsupported request(s). Ensure initialize is sent first and include Accept: application/json, text/event-stream',
-  });
+  // No supported request -> JSON-RPC error response for better client handling
+  const error = {
+    jsonrpc: '2.0',
+    id: null,
+    error: { code: -32600, message: 'Invalid Request: expected JSON-RPC method (initialize, tools/list, tools/call)' },
+  };
+  return sendJson(res, error);
 };
 
 app.post('/mcp', mcpHandler);
