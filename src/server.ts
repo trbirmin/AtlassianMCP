@@ -19,8 +19,9 @@ app.use(cors({
   origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
     // Security: validate Origin per MCP streamable-http guidance
     const allowed = process.env.ALLOWED_ORIGINS?.split(',').map(s => s.trim()).filter(Boolean) || [];
-    if (!origin || allowed.length === 0 || allowed.includes(origin)) return callback(null, true);
-    return callback(new Error('Origin not allowed'));
+  if (!origin || allowed.length === 0 || allowed.includes(origin)) return callback(null, true);
+  // Do not error; just disable CORS so browser blocks, but server responds without 500
+  return callback(null, false);
   },
   credentials: false,
 }));
