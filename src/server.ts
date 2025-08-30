@@ -49,7 +49,7 @@ function sendJson(res: Response, obj: unknown) {
 }
 
 // MCP endpoint (Streamable HTTP)
-app.post('/mcp', (req: Request, res: Response) => {
+const mcpHandler = (req: Request, res: Response) => {
   const accept = req.header('Accept') || '';
   const sessionId = req.header('Mcp-Session-Id');
 
@@ -222,10 +222,14 @@ app.post('/mcp', (req: Request, res: Response) => {
   return res.status(400).json({
     error: 'Unsupported request(s). Ensure initialize is sent first and include Accept: application/json, text/event-stream',
   });
-});
+};
+
+app.post('/mcp', mcpHandler);
+// Accept APIM-style prefixed route with connectionId segment
+app.post('/:connectionId/mcp', mcpHandler);
 
 // Optional GET to open SSE-only stream (not used by default)
-app.get('/mcp', (req: Request, res: Response) => {
+const mcpGetHandler = (req: Request, res: Response) => {
   const accept = req.header('Accept') || '';
   if (!accept.includes('text/event-stream')) {
     return res.status(405).send('Method Not Allowed');
@@ -233,7 +237,9 @@ app.get('/mcp', (req: Request, res: Response) => {
   sseHeaders(res);
   // For simplicity, no unsolicited events; close immediately
   res.end();
-});
+};
+app.get('/mcp', mcpGetHandler);
+app.get('/:connectionId/mcp', mcpGetHandler);
 
 // Health endpoint
 app.get('/healthz', (_req, res) => res.status(200).send('ok'));
