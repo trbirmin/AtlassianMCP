@@ -334,11 +334,21 @@ const mcpHandler = (req: Request, res: Response) => {
           ],
         },
       };
-    } else if (name === 'confluence.listSpaces') {
-      return { jsonrpc: '2.0', id, result: { __defer: true } }; // will be replaced below by async handler
-    } else if (name === 'confluence.summarizePage') {
-      return { jsonrpc: '2.0', id, result: { __defer: true } };
-    } else if (name === 'confluence.createPage') {
+    } else if (
+      name === 'confluence.listSpaces' ||
+      name === 'confluence.summarizePage' ||
+      name === 'confluence.createPage' ||
+      name === 'confluence.updatePage' ||
+      name === 'confluence.getPage' ||
+      name === 'confluence.listChildren' ||
+      name === 'confluence.listComments' ||
+      name === 'confluence.addComment' ||
+      name === 'confluence.updateComment' ||
+      name === 'confluence.search' ||
+      name === 'confluence.getSpace' ||
+      name === 'confluence.me'
+    ) {
+      // Defer all Confluence operations to the async handler
       return { jsonrpc: '2.0', id, result: { __defer: true } };
     }
     return {
