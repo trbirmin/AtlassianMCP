@@ -128,8 +128,8 @@ const mcpHandler = (req: Request, res: Response) => {
           resources: { subscribe: true, listChanged: true },
           tools: { listChanged: true },
         },
-        serverInfo: { name: 'Atlassin-MCP-Server', version: '0.1.0' },
-        instructions: 'Welcome to the Atlassin MCP server (Streamable HTTP).',
+  serverInfo: { name: 'Atlassian-MCP-Server', version: '0.1.0' },
+  instructions: 'Welcome to the Atlassian MCP server (Streamable HTTP).',
       },
     };
 

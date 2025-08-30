@@ -1,4 +1,4 @@
-# Atlassin MCP Streamable HTTP Server
+# Atlassian MCP Streamable HTTP Server
 
 A minimal Model Context Protocol (MCP) server implementing the Streamable HTTP transport, deployable to Azure App Service and connectable to Microsoft Copilot Studio via a custom connector.
 
