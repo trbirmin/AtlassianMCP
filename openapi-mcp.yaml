@@ -8,7 +8,7 @@ basePath: /
 schemes:
   - https
 paths:
-  /mcp:
+  /{connectionId}/mcp:
     post:
       summary: Atlassin MCP Server Endpoint
       x-ms-agentic-protocol: mcp-streamable-1.0
