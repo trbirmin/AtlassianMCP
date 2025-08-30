@@ -390,8 +390,8 @@ async function handleConfluenceAsync(msg: any): Promise<any> {
     const url = `${conf.baseUrl}/wiki/rest/api/space?limit=${limit}`;
     const r = await fetch(url, { headers: { Authorization: `Basic ${conf.auth}`, Accept: 'application/json' } as any });
     if (!r.ok) throw new Error(`List spaces failed: ${r.status}`);
-    const data = await r.json();
-    const items = (data?.results || []).map((s: any) => ({ key: s.key, name: s.name, id: s.id, url: conf.baseUrl + (s?._links?.webui || '') }));
+  const data = await r.json();
+  const items = (data?.results || []).map((s: any) => ({ key: s.key, name: s.name, id: s.id, url: buildConfluenceWebUrl(conf.baseUrl, s?._links?.webui) }));
     return { spaces: items };
   }
   if (name === 'confluence.summarizePage') {
@@ -410,10 +410,10 @@ async function handleConfluenceAsync(msg: any): Promise<any> {
     const getUrl = `${conf.baseUrl}/wiki/rest/api/content/${id}?expand=body.storage,version,space`;
     const gr = await fetch(getUrl, { headers: { Authorization: `Basic ${conf.auth}`, Accept: 'application/json' } as any });
     if (!gr.ok) throw new Error(`Get page failed: ${gr.status}`);
-    const page = await gr.json();
+  const page = await gr.json();
     const storage = page?.body?.storage?.value || '';
     const text = htmlToText(storage).slice(0, 8000);
-    const url = conf.baseUrl + (page?._links?.webui || '');
+  const url = buildConfluenceWebUrl(conf.baseUrl, page?._links?.webui);
     return { id, title: page?.title, url, excerpt: text.slice(0, 1000), content: text };
   }
   if (name === 'confluence.createPage') {
@@ -438,8 +438,8 @@ async function handleConfluenceAsync(msg: any): Promise<any> {
       body: JSON.stringify(payload),
     });
     if (!pr.ok) throw new Error(`Create page failed: ${pr.status}`);
-    const created = await pr.json();
-    const url = conf.baseUrl + (created?._links?.webui || '');
+  const created = await pr.json();
+  const url = buildConfluenceWebUrl(conf.baseUrl, created?._links?.webui);
     return { id: created?.id, title: created?.title, url };
   }
   throw new Error(`Unsupported Confluence tool: ${name}`);
@@ -452,4 +452,16 @@ function toErr(e: any) {
 function htmlToText(html: string) {
   // naive strip tags; adequate for summaries
   return String(html).replace(/<\s*br\s*\/?\s*>/gi, '\n').replace(/<\s*\/p\s*>/gi, '\n').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&');
+}
+
+function buildConfluenceWebUrl(baseUrl: string, webui?: string) {
+  const base = String(baseUrl || '').replace(/\/+$/, '');
+  if (!webui) return base || '';
+  let path = String(webui);
+  if (!path.startsWith('/')) path = '/' + path;
+  // If path lacks /wiki prefix, add it for cloud URLs
+  if (path.startsWith('/spaces/') || path.startsWith('/pages/') || path.startsWith('/display/')) {
+    path = '/wiki' + path;
+  }
+  return base + path;
 }
