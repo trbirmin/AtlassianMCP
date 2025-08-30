@@ -18,36 +18,9 @@ paths:
       produces:
         - application/json
         - text/event-stream
-      parameters:
-        - in: body
-          name: body
-          required: true
-          schema:
-            type: object
-            properties:
-              jsonrpc:
-                type: string
-                enum: ['2.0']
-              method:
-                type: string
-                description: JSON-RPC method (initialize, tools/list, tools/call)
-              id:
-                type: string
-                description: JSON-RPC id (string or integer). Represented as string here for Swagger 2.0 compatibility.
-              params:
-                type: object
-            required: [jsonrpc, method]
       responses:
         '200':
           description: Success
-    get:
-      summary: Server-Sent Events stream (optional)
-  operationId: StreamMCP
-      produces:
-        - text/event-stream
-      responses:
-        '200':
-          description: SSE stream
   /healthz:
     get:
       summary: Health probe
