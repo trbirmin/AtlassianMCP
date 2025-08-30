@@ -35,7 +35,7 @@ npm run dev
 
 ## Copilot Studio custom connector
 - In Power Apps, create a Custom Connector and import `openapi-mcp.yaml`.
-- Ensure `host` is your Azure Web App host.
+- Ensure `host` is your Azure Web App host (e.g., `atlassian-mcp.azurewebsites.net`).
 - Copilot Studio will use Streamable (GA); SSE is being deprecated Aug 2025 per docs.
 
 ## MCP basics implemented

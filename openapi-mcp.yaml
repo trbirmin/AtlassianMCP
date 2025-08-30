@@ -3,7 +3,7 @@ info:
   title: Atlassian MCP Server
   description: MCP Server using Streamable HTTP transport for Copilot Studio
   version: 0.1.0
-host: atlassinmcp.azurewebsites.net
+host: atlassian-mcp.azurewebsites.net
 basePath: /
 schemes:
   - https
