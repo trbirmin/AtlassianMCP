@@ -439,7 +439,7 @@ async function handleConfluenceAsync(msg: any): Promise<any> {
     });
     if (!pr.ok) throw new Error(`Create page failed: ${pr.status}`);
     const created = await pr.json();
-    const url = conf.baseUrl + (created?._links?.webui || '');
+    const url = conf.baseUrl +'wiki' + (created?._links?.webui || '');
     return { id: created?.id, title: created?.title, url };
   }
   throw new Error(`Unsupported Confluence tool: ${name}`);
