@@ -113,7 +113,7 @@ const mcpHandler = (req: Request, res: Response) => {
     const protocolVersion = '2025-03-26';
     const id = msg.id;
 
-    // Create or reuse session
+    // Create or reuse sessions
     const newSessionId = sessionId || cryptoRandomId();
     sessions.add(newSessionId);
 
