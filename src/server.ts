@@ -103,6 +103,15 @@ app.post('/mcp', (req: Request, res: Response) => {
       result: {
         tools: [
           {
+            name: 'help',
+            description: 'Describe available MCP tools and how to use them',
+            inputSchema: {
+              type: 'object',
+              properties: {},
+              additionalProperties: false,
+            },
+          },
+          {
             name: 'echo',
             description: 'Echo back the provided text',
             inputSchema: {
@@ -122,7 +131,18 @@ app.post('/mcp', (req: Request, res: Response) => {
     const id = msg.id;
     const name = msg?.params?.name;
     const args = msg?.params?.arguments ?? {};
-    if (name === 'echo') {
+    if (name === 'help') {
+      const text = [
+        'Available tools:',
+        '- help: Show this help.',
+        "- echo: Echo back text. Usage: name='echo', arguments: { text: 'Hello' }",
+      ].join('\n');
+      return {
+        jsonrpc: '2.0',
+        id,
+        result: { content: [{ type: 'text', text }] },
+      };
+    } else if (name === 'echo') {
       const text = typeof args.text === 'string' ? args.text : JSON.stringify(args);
       return {
         jsonrpc: '2.0',
