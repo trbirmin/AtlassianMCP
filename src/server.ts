@@ -71,7 +71,17 @@ const mcpHandler = (req: Request, res: Response) => {
   }
 
   // Handle initialize request(s)
-  let wantsSse = accept.includes('text/event-stream');
+  // Prefer JSON unless Accept explicitly prefers SSE via higher q-value
+  const parseAccept = (h: string) => h.split(',').map(s => s.trim()).map(item => {
+    const [type, ...params] = item.split(';').map(s => s.trim());
+    const qParam = params.find(p => p.startsWith('q='));
+    const q = qParam ? parseFloat(qParam.split('=')[1]) : 1;
+    return { type: type.toLowerCase(), q: isNaN(q) ? 1 : q };
+  });
+  const accepts = parseAccept(accept);
+  const sseQ = accepts.find(a => a.type === 'text/event-stream')?.q ?? 0;
+  const jsonQ = accepts.find(a => a.type === 'application/json')?.q ?? 1; // default favor JSON
+  let wantsSse = sseQ > jsonQ;
 
   const handleInitialize = (msg: any) => {
     const requestedVersion = msg?.params?.protocolVersion;
