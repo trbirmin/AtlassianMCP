@@ -413,7 +413,7 @@ async function handleConfluenceAsync(msg: any): Promise<any> {
     const page = await gr.json();
     const storage = page?.body?.storage?.value || '';
     const text = htmlToText(storage).slice(0, 8000);
-    const url = conf.baseUrl + (page?._links?.webui || '');
+    const url = conf.baseUrl + 'wiki' + (page?._links?.webui || '');
     return { id, title: page?.title, url, excerpt: text.slice(0, 1000), content: text };
   }
   if (name === 'confluence.createPage') {
