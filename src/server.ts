@@ -27,6 +27,22 @@ app.use(cors({
 app.use(morgan('combined'));
 app.use(express.json({ limit: '1mb' }));
 
+// Ensure JSON error responses instead of HTML for body parse or server errors
+app.use((err: any, _req: Request, res: Response, next: Function) => {
+  if (!err) return next();
+  const isParse = err?.type === 'entity.parse.failed' || err instanceof SyntaxError;
+  const status = isParse ? 400 : (err.status || 500);
+  res.setHeader('Content-Type', 'application/json');
+  res.status(status).send({
+    jsonrpc: '2.0',
+    id: null,
+    error: {
+      code: isParse ? -32700 : -32603,
+      message: isParse ? 'Parse error: invalid JSON' : 'Internal error',
+    },
+  });
+});
+
 // Simple in-memory session tracker
 const sessions = new Set<string>();
 
