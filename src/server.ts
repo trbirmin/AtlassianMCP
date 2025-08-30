@@ -55,7 +55,11 @@ const mcpHandler = (req: Request, res: Response) => {
 
   // If only notifications/responses: accept and return 202 per spec
   // Unwrap APIM/connector wrapper shapes (e.g., { queryRequest: [...] })
-  const rawBody = req.body;
+  let rawBody = req.body as any;
+  // If body is a JSON string, attempt to parse into an object/array
+  if (typeof rawBody === 'string') {
+    try { rawBody = JSON.parse(rawBody); } catch { /* leave as string */ }
+  }
   const payload = (rawBody && typeof rawBody === 'object')
     ? (('queryRequest' in rawBody) ? (rawBody as any).queryRequest
       : (('requests' in rawBody) ? (rawBody as any).requests
