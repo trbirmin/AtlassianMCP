@@ -9,7 +9,10 @@ import morgan from 'morgan';
 // - GET optionally opens an SSE stream for server -> client messages (unused by default)
 
 const app = express();
-const port = process.env.PORT || 3000;
+// Azure Linux can sometimes set PORT to a non-numeric string via the platform.
+// Parse only numeric values; otherwise default to 8080 (App Service expects 8080).
+const rawPort = process.env.PORT;
+const port = rawPort && /^\d+$/.test(rawPort) ? parseInt(rawPort, 10) : 8080;
 
 app.use(helmet());
 app.use(cors({
