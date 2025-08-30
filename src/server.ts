@@ -162,6 +162,45 @@ const mcpHandler = (req: Request, res: Response) => {
               additionalProperties: false,
             },
           },
+          {
+            name: 'confluence.listSpaces',
+            description: 'List Confluence spaces available to the configured user',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                limit: { type: 'number', description: 'Max spaces to return (default 20, max 100)' },
+              },
+              additionalProperties: false,
+            },
+          },
+          {
+            name: 'confluence.summarizePage',
+            description: 'Find a Confluence page by title query and return its content for summarization',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                query: { type: 'string', description: 'Title or query to search for' },
+                spaceKey: { type: 'string', description: 'Optional space key to scope the search' },
+              },
+              required: ['query'],
+              additionalProperties: false,
+            },
+          },
+          {
+            name: 'confluence.createPage',
+            description: 'Create a Confluence page in a space',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                spaceKey: { type: 'string', description: 'Confluence space key' },
+                title: { type: 'string', description: 'Page title' },
+                body: { type: 'string', description: 'Page body in Confluence storage (HTML) format' },
+                parentId: { type: 'string', description: 'Optional parent page ID' },
+              },
+              required: ['spaceKey', 'title', 'body'],
+              additionalProperties: false,
+            },
+          },
         ],
       },
     };
@@ -177,6 +216,9 @@ const mcpHandler = (req: Request, res: Response) => {
         'Available tools:',
         '- help: Show this help.',
         "- echo: Echo back text. Usage: name='echo', arguments: { text: 'Hello' }",
+        "- confluence.listSpaces: List spaces (optional: limit)",
+        "- confluence.summarizePage: Find a page by title and return content (query, optional spaceKey)",
+        "- confluence.createPage: Create a page (spaceKey, title, body, optional parentId)",
       ].join('\n');
       return {
         jsonrpc: '2.0',
@@ -194,6 +236,12 @@ const mcpHandler = (req: Request, res: Response) => {
           ],
         },
       };
+    } else if (name === 'confluence.listSpaces') {
+      return { jsonrpc: '2.0', id, result: { __defer: true } }; // will be replaced below by async handler
+    } else if (name === 'confluence.summarizePage') {
+      return { jsonrpc: '2.0', id, result: { __defer: true } };
+    } else if (name === 'confluence.createPage') {
+      return { jsonrpc: '2.0', id, result: { __defer: true } };
     }
     return {
       jsonrpc: '2.0',
@@ -220,9 +268,20 @@ const mcpHandler = (req: Request, res: Response) => {
         const sid = assignedSession || sessionId || cryptoRandomId();
         writeSse(res, out, `${sid}:tools-list:${msg.id}`);
       } else if (msg?.method === 'tools/call') {
-        const out = handleToolsCall(msg);
         const sid = assignedSession || sessionId || cryptoRandomId();
-        writeSse(res, out, `${sid}:tools-call:${msg.id}`);
+        const out = handleToolsCall(msg);
+        if (out?.result?.__defer) {
+          // Handle async Confluence operations
+          handleConfluenceAsync(msg).then((payload) => {
+            writeSse(res, { jsonrpc: '2.0', id: msg.id, result: payload }, `${sid}:tools-call:${msg.id}`);
+            res.end();
+          }).catch((e) => {
+            writeSse(res, { jsonrpc: '2.0', id: msg.id, error: { code: -32603, message: 'Confluence error', data: toErr(e) } }, `${sid}:tools-call:${msg.id}`);
+            res.end();
+          });
+        } else {
+          writeSse(res, out, `${sid}:tools-call:${msg.id}`);
+        }
       } else if (msg && msg.id && msg.method) {
         // Unknown method -> respond with error later or noop
         const error = {
@@ -255,6 +314,12 @@ const mcpHandler = (req: Request, res: Response) => {
       return sendJson(res, out);
     } else if (msg?.method === 'tools/call') {
       const out = handleToolsCall(msg);
+      if (out?.result?.__defer) {
+        handleConfluenceAsync(msg)
+          .then((payload) => sendJson(res, { jsonrpc: '2.0', id: msg.id, result: payload }))
+          .catch((e) => sendJson(res, { jsonrpc: '2.0', id: msg.id, error: { code: -32603, message: 'Confluence error', data: toErr(e) } }));
+        return;
+      }
       return sendJson(res, out);
     }
   }
@@ -301,4 +366,90 @@ app.listen(port, () => {
 function cryptoRandomId() {
   // Simple random ID for session; in production, use crypto.randomUUID()
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
+}
+
+// -------- Confluence integration helpers ---------
+function getConfluenceAuth() {
+  const baseUrl = process.env.CONFLUENCE_BASE_URL;
+  const email = process.env.CONFLUENCE_EMAIL;
+  const token = process.env.CONFLUENCE_API_TOKEN;
+  if (!baseUrl || !email || !token) return null;
+  const auth = Buffer.from(`${email}:${token}`).toString('base64');
+  return { baseUrl, auth };
+}
+
+async function handleConfluenceAsync(msg: any): Promise<any> {
+  const name = msg?.params?.name as string;
+  const args = msg?.params?.arguments ?? {};
+  const conf = getConfluenceAuth();
+  if (!conf) {
+    return { message: 'Confluence is not configured. Set CONFLUENCE_BASE_URL, CONFLUENCE_EMAIL, CONFLUENCE_API_TOKEN.' };
+  }
+  if (name === 'confluence.listSpaces') {
+    const limit = Math.min(Math.max(Number(args.limit) || 20, 1), 100);
+    const url = `${conf.baseUrl}/wiki/rest/api/space?limit=${limit}`;
+    const r = await fetch(url, { headers: { Authorization: `Basic ${conf.auth}`, Accept: 'application/json' } as any });
+    if (!r.ok) throw new Error(`List spaces failed: ${r.status}`);
+    const data = await r.json();
+    const items = (data?.results || []).map((s: any) => ({ key: s.key, name: s.name, id: s.id, url: conf.baseUrl + (s?._links?.webui || '') }));
+    return { spaces: items };
+  }
+  if (name === 'confluence.summarizePage') {
+    const query = String(args.query || '').trim();
+    const spaceKey = args.spaceKey ? String(args.spaceKey) : undefined;
+    if (!query) throw new Error('query is required');
+    const cql = `type=page AND title ~ "${query.replace(/"/g, '\\"')}"` + (spaceKey ? ` AND space=${spaceKey}` : '');
+    const searchUrl = `${conf.baseUrl}/wiki/rest/api/search?cql=${encodeURIComponent(cql)}&limit=1`;
+    const sr = await fetch(searchUrl, { headers: { Authorization: `Basic ${conf.auth}`, Accept: 'application/json' } as any });
+    if (!sr.ok) throw new Error(`Search failed: ${sr.status}`);
+    const sdata = await sr.json();
+    const hit = sdata?.results?.[0];
+    if (!hit) return { message: 'No page found for query.' };
+    // Retrieve content by id
+    const id = hit?.content?.id || hit?.id;
+    const getUrl = `${conf.baseUrl}/wiki/rest/api/content/${id}?expand=body.storage,version,space`;
+    const gr = await fetch(getUrl, { headers: { Authorization: `Basic ${conf.auth}`, Accept: 'application/json' } as any });
+    if (!gr.ok) throw new Error(`Get page failed: ${gr.status}`);
+    const page = await gr.json();
+    const storage = page?.body?.storage?.value || '';
+    const text = htmlToText(storage).slice(0, 8000);
+    const url = conf.baseUrl + (page?._links?.webui || '');
+    return { id, title: page?.title, url, excerpt: text.slice(0, 1000), content: text };
+  }
+  if (name === 'confluence.createPage') {
+    const spaceKey = String(args.spaceKey || '').trim();
+    const title = String(args.title || '').trim();
+    const body = String(args.body || '');
+    const parentId = args.parentId ? String(args.parentId) : undefined;
+    if (!spaceKey || !title || !body) throw new Error('spaceKey, title, and body are required');
+    const postUrl = `${conf.baseUrl}/wiki/rest/api/content`;
+    const payload: any = {
+      type: 'page',
+      title,
+      space: { key: spaceKey },
+      body: { storage: { value: body, representation: 'storage' } },
+    };
+    if (parentId) {
+      payload.ancestors = [{ id: parentId }];
+    }
+    const pr = await fetch(postUrl, {
+      method: 'POST',
+      headers: { Authorization: `Basic ${conf.auth}`, 'Content-Type': 'application/json', Accept: 'application/json' } as any,
+      body: JSON.stringify(payload),
+    });
+    if (!pr.ok) throw new Error(`Create page failed: ${pr.status}`);
+    const created = await pr.json();
+    const url = conf.baseUrl + (created?._links?.webui || '');
+    return { id: created?.id, title: created?.title, url };
+  }
+  throw new Error(`Unsupported Confluence tool: ${name}`);
+}
+
+function toErr(e: any) {
+  return { message: e?.message || String(e) };
+}
+
+function htmlToText(html: string) {
+  // naive strip tags; adequate for summaries
+  return String(html).replace(/<\s*br\s*\/?\s*>/gi, '\n').replace(/<\s*\/p\s*>/gi, '\n').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&');
 }
