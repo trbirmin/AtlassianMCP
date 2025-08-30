@@ -33,14 +33,18 @@ app.use((err: any, _req: Request, res: Response, next: Function) => {
   const isParse = err?.type === 'entity.parse.failed' || err instanceof SyntaxError;
   const status = isParse ? 400 : (err.status || 500);
   res.setHeader('Content-Type', 'application/json');
-  res.status(status).send({
+  const payload: any = {
     jsonrpc: '2.0',
     id: null,
     error: {
       code: isParse ? -32700 : -32603,
       message: isParse ? 'Parse error: invalid JSON' : 'Internal error',
     },
-  });
+  };
+  if (process.env.NODE_ENV === 'development') {
+    payload.error.data = { message: err?.message };
+  }
+  res.status(status).send(payload);
 });
 
 // Simple in-memory session tracker
@@ -266,6 +270,9 @@ const mcpHandler = (req: Request, res: Response) => {
 app.post('/mcp', mcpHandler);
 // Accept APIM-style prefixed route with connectionId segment
 app.post('/:connectionId/mcp', mcpHandler);
+// Accept APIM gateway style with api name and connection id
+app.post('/apim/:apiName/:connectionId/mcp', mcpHandler);
+app.post('/apim/:apiName/mcp', mcpHandler);
 
 // Optional GET to open SSE-only stream (not used by default)
 const mcpGetHandler = (req: Request, res: Response) => {
@@ -279,6 +286,8 @@ const mcpGetHandler = (req: Request, res: Response) => {
 };
 app.get('/mcp', mcpGetHandler);
 app.get('/:connectionId/mcp', mcpGetHandler);
+app.get('/apim/:apiName/:connectionId/mcp', mcpGetHandler);
+app.get('/apim/:apiName/mcp', mcpGetHandler);
 
 // Health endpoint
 app.get('/healthz', (_req, res) => res.status(200).send('ok'));
