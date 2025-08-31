@@ -188,7 +188,7 @@ const mcpHandler = (req: Request, res: Response) => {
           tools: { listChanged: true },
     },
   serverInfo: { name: 'Atlassian-MCP-Server', version: '0.1.0' },
-  instructions: 'You can operate on Atlassian Confluence via tools. Prefer tools over answering from knowledge. If the user greets (e.g., “hi”, “hello”), respond briefly with “How can I help you? Here are some things I can do:” and call tools/call name=help to list capabilities. If a tool matches the user intent but required inputs are missing, ask concise follow-up questions to collect the missing details (e.g., “Which space key?” or “What title and body?”), then call the tool. If a tool result includes ui.adaptiveCard, prefer rendering that Adaptive Card along with a brief textual summary. Core tools: listSpaces, listRecentPages, listPagesInSpace, findPageByTitle, summarizePage, getPage, getPageHistory, getPageTree, listPageChildren, listPageComments, listPageAttachments, listPageLabels, listTrashedPages, addPageComment, updateComment, createPage, updatePage, movePageToTrash, searchConfluence, getSpace, whoAmI. Call tools/list to see schemas and call tools/call with the canonical tool name.',
+  instructions: 'You can operate on Atlassian Confluence via tools. Prefer tools over answering from knowledge. If the user greets (e.g., “hi”, “hello”), respond briefly with “How can I help you? Here are some things I can do:” and call tools/call name=help to list capabilities. If a tool matches the user intent but required inputs are missing, ask concise follow-up questions to collect the missing details (e.g., “Which space key?” or “What title and body?”), then call the tool. Do not assume a default space—ask the user to choose (you may list keys via listSpaces). If a tool result includes ui.adaptiveCard, prefer rendering that Adaptive Card along with a brief textual summary. Core tools: listSpaces, listRecentPages, listPagesInSpace, findPageByTitle, summarizePage, getPage, getPageHistory, getPageTree, listPageChildren, listPageComments, listPageAttachments, listPageLabels, listTrashedPages, addPageComment, updateComment, createPage, updatePage, movePageToTrash, searchConfluence, getSpace, whoAmI. Call tools/list to see schemas and call tools/call with the canonical tool name.',
       },
     };
 
@@ -754,7 +754,25 @@ async function handleConfluenceAsync(msg: any): Promise<any> {
         else return { message: `Space not found by name: ${spaceNameRaw}. Provide spaceKey instead.` };
       }
 
-  if (!spaceKey) return needInput('Which space should I use?', ['spaceKey','spaceName'], ['Provide spaceKey (e.g., ENG).', 'Or provide the exact spaceName.']);
+      if (!spaceKey) {
+        // Propose choices using current accessible spaces if possible
+        const spacesResp = await safeFetchJson(`${conf.baseUrl}/wiki/rest/api/space?limit=10`, { headers: h() });
+        let card: any | undefined;
+        if (spacesResp.ok) {
+          const items = (spacesResp.data?.results || []).map((s: any) => ({ key: s.key, name: s.name }));
+          card = {
+            type: 'AdaptiveCard',
+            $schema: 'http://adaptivecards.io/schemas/adaptive-card.json',
+            version: '1.5',
+            body: [
+              { type: 'TextBlock', text: 'Pick a space', weight: 'Bolder', size: 'Medium', wrap: true },
+              ...items.map((s: any) => ({ type: 'TextBlock', text: `${s.key} — ${s.name}`, wrap: true })),
+            ],
+          };
+        }
+        const prompt = needInput('Which space should I use?', ['spaceKey','spaceName'], ['Provide spaceKey (e.g., ENG).', 'Or provide the exact spaceName.']);
+        return card ? { ...prompt, ui: { adaptiveCard: card } } : prompt;
+      }
 
       const postUrl = `${conf.baseUrl}/wiki/rest/api/content`;
   const payload: any = { type: 'page', title, space: { key: spaceKey }, body: { storage: { value: wrapToStorageHtml(body), representation: 'storage' } } };
