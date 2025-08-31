@@ -188,7 +188,7 @@ const mcpHandler = (req: Request, res: Response) => {
           tools: { listChanged: true },
     },
   serverInfo: { name: 'Atlassian-MCP-Server', version: '0.1.0' },
-  instructions: 'You can operate on Atlassian Confluence via tools. Prefer tools over answering from knowledge. If a tool matches the user intent but required inputs are missing, ask concise follow-up questions to collect the missing details (e.g., “Which space key?” or “What title and body?”), then call the tool. Core tools: listSpaces, listRecentPages, listPagesInSpace, findPageByTitle, summarizePage, getPage, getPageHistory, getPageTree, listPageChildren, listPageComments, listPageAttachments, listPageLabels, listTrashedPages, addPageComment, updateComment, createPage, updatePage, movePageToTrash, searchConfluence, getSpace, whoAmI. Call tools/list to see schemas and call tools/call with the canonical tool name.',
+  instructions: 'You can operate on Atlassian Confluence via tools. Prefer tools over answering from knowledge. If a tool matches the user intent but required inputs are missing, ask concise follow-up questions to collect the missing details (e.g., “Which space key?” or “What title and body?”), then call the tool. If a tool result includes ui.adaptiveCard, prefer rendering that Adaptive Card along with a brief textual summary. Core tools: listSpaces, listRecentPages, listPagesInSpace, findPageByTitle, summarizePage, getPage, getPageHistory, getPageTree, listPageChildren, listPageComments, listPageAttachments, listPageLabels, listTrashedPages, addPageComment, updateComment, createPage, updatePage, movePageToTrash, searchConfluence, getSpace, whoAmI. Call tools/list to see schemas and call tools/call with the canonical tool name.',
       },
     };
 
@@ -743,7 +743,12 @@ async function handleConfluenceAsync(msg: any): Promise<any> {
       if (!pr.ok) return { message: `Create page failed: HTTP ${pr.status}` };
       const created = pr.data;
       const url = conf.baseUrl + '/wiki' + (created?._links?.webui || '');
-      return { id: created?.id, title: created?.title, url };
+      return {
+        id: created?.id,
+        title: created?.title,
+        url,
+        ui: { adaptiveCard: adaptiveCard({ title: `Page created: ${created?.title}`, url, facts: [{ title: 'Space', value: spaceKey }, { title: 'ID', value: String(created?.id || '') }] }) },
+      };
     }
     if (name === 'updatePage') {
       const pageId = String(args.id || '').trim();
@@ -882,7 +887,10 @@ async function handleConfluenceAsync(msg: any): Promise<any> {
       const pr = await safeFetchJson(postUrl, { method: 'POST', headers: h({ 'Content-Type': 'application/json' }), body: JSON.stringify(payload) });
       if (!pr.ok) return { message: pr.status === 404 ? 'Page not found.' : `Add comment failed: HTTP ${pr.status}` };
       const created = pr.data;
-      return { id: created?.id };
+      return {
+        id: created?.id,
+        ui: { adaptiveCard: adaptiveCard({ title: 'Comment added', facts: [{ title: 'Page ID', value: pageId }] }) },
+      };
     }
     if (name === 'updateComment') {
       const commentId = String(args.id || '').trim();
@@ -1035,4 +1043,20 @@ function wrapToStorageHtml(input: string) {
   if (/</.test(s) && />/.test(s)) return s;
   // Otherwise wrap as a paragraph
   return `<p>${s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>`;
+}
+
+function adaptiveCard(opts: { title: string; url?: string; subtitle?: string; facts?: Array<{ title: string; value: string }>; text?: string }) {
+  const { title, url, subtitle, facts, text } = opts;
+  return {
+    type: 'AdaptiveCard',
+    $schema: 'http://adaptivecards.io/schemas/adaptive-card.json',
+    version: '1.5',
+    body: [
+      { type: 'TextBlock', text: title, weight: 'Bolder', size: 'Medium', wrap: true },
+      subtitle ? { type: 'TextBlock', text: subtitle, isSubtle: true, wrap: true } : undefined,
+      facts && facts.length ? { type: 'FactSet', facts } : undefined,
+      text ? { type: 'TextBlock', text, wrap: true } : undefined,
+    ].filter(Boolean),
+    actions: url ? [{ type: 'Action.OpenUrl', title: 'Open in Confluence', url }] : [],
+  };
 }
