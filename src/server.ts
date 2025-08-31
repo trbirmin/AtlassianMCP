@@ -278,7 +278,7 @@ const mcpHandler = (req: Request, res: Response) => {
                 spaceKey: { type: 'string', description: 'Confluence space key (preferred if known)' },
                 spaceName: { type: 'string', description: 'Alternative to spaceKey: the human-friendly space name (e.g., "My first space")' },
                 title: { type: 'string', description: 'Page title' },
-                body: { type: 'string', description: 'Page body in Confluence storage (HTML) format' },
+                body: { type: 'string', description: 'Page body; plain text is auto-wrapped to storage HTML' },
                 parentId: { type: 'string', description: 'Optional parent page ID' },
               },
               // Require title and body; require at least one of spaceKey or spaceName (documented in description)
@@ -720,7 +720,7 @@ async function handleConfluenceAsync(msg: any): Promise<any> {
         const missing: string[] = [];
         if (!title) missing.push('title');
         if (!body) missing.push('body');
-        return needInput('I can create the page—what title and body should I use?', missing, ['Provide a title.', 'Provide a body in HTML storage format (e.g., <p>…</p>).']);
+  return needInput('I can create the page—what title and body should I use?', missing, ['Provide a title.', 'Provide the body (plain text is fine).']);
       }
 
       let spaceKey = spaceKeyRaw;
@@ -772,7 +772,7 @@ async function handleConfluenceAsync(msg: any): Promise<any> {
       const page = gr.data;
       const nextVersion = (page?.version?.number || 0) + 1;
       const putUrl = `${conf.baseUrl}/wiki/rest/api/content/${pageId}`;
-      const payload: any = { id: pageId, type: 'page', title: newTitle || page?.title, version: { number: nextVersion, minorEdit }, body: newBody ? { storage: { value: newBody, representation: 'storage' } } : undefined };
+  const payload: any = { id: pageId, type: 'page', title: newTitle || page?.title, version: { number: nextVersion, minorEdit }, body: newBody ? { storage: { value: wrapToStorageHtml(newBody), representation: 'storage' } } : undefined };
       const ur = await safeFetchJson(putUrl, { method: 'PUT', headers: h({ 'Content-Type': 'application/json' }), body: JSON.stringify(payload) });
       if (!ur.ok) return { message: `Update page failed: HTTP ${ur.status}` };
       const updated = ur.data;
