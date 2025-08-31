@@ -385,8 +385,14 @@ const mcpHandler = (req: Request, res: Response) => {
             description: 'Create a comment on a page',
             inputSchema: {
               type: 'object',
-              properties: { id: { type: 'string', description: 'Page ID' }, body: { type: 'string', description: 'Comment body in storage (HTML)' } },
-              required: ['id', 'body'],
+              properties: {
+                id: { type: 'string', description: 'Page ID (preferred if known)' },
+                pageTitle: { type: 'string', description: 'Alternative: exact page title to comment on' },
+                spaceKey: { type: 'string', description: 'Optional space key to narrow title lookup' },
+                spaceName: { type: 'string', description: 'Optional space name to narrow title lookup' },
+                body: { type: 'string', description: 'Comment body; plain text is auto-wrapped to storage HTML' },
+              },
+              required: ['body'],
               additionalProperties: false,
             },
           },
@@ -698,7 +704,7 @@ async function handleConfluenceAsync(msg: any): Promise<any> {
       const spaceKeyRaw = args.spaceKey ? String(args.spaceKey).trim() : '';
       const spaceNameRaw = args.spaceName ? String(args.spaceName).trim() : '';
       const title = String(args.title || '').trim();
-      const body = String(args.body || '');
+  const body = String(args.body || '');
       const parentId = args.parentId ? String(args.parentId) : undefined;
       if (!title || !body) {
         const missing: string[] = [];
@@ -731,7 +737,7 @@ async function handleConfluenceAsync(msg: any): Promise<any> {
   if (!spaceKey) return needInput('Which space should I use?', ['spaceKey','spaceName'], ['Provide spaceKey (e.g., ENG).', 'Or provide the exact spaceName.']);
 
       const postUrl = `${conf.baseUrl}/wiki/rest/api/content`;
-      const payload: any = { type: 'page', title, space: { key: spaceKey }, body: { storage: { value: body, representation: 'storage' } } };
+  const payload: any = { type: 'page', title, space: { key: spaceKey }, body: { storage: { value: wrapToStorageHtml(body), representation: 'storage' } } };
       if (parentId) payload.ancestors = [{ id: parentId }];
       const pr = await safeFetchJson(postUrl, { method: 'POST', headers: h({ 'Content-Type': 'application/json' }), body: JSON.stringify(payload) });
       if (!pr.ok) return { message: `Create page failed: HTTP ${pr.status}` };
@@ -830,16 +836,49 @@ async function handleConfluenceAsync(msg: any): Promise<any> {
       return { labels };
     }
     if (name === 'addPageComment') {
-      const pageId = String(args.id || '').trim();
-      const body = String(args.body || '');
-      if (!pageId || !body) {
-        const missing: string[] = [];
-        if (!pageId) missing.push('id');
-        if (!body) missing.push('body');
-        return needInput('I can add a comment—what page and what text?', missing, ['Provide the page ID.', 'Provide the comment body (HTML storage).']);
+      let pageId = String(args.id || '').trim();
+      const pageTitle = args.pageTitle ? String(args.pageTitle).trim() : '';
+      const spaceKeyArg = args.spaceKey ? String(args.spaceKey).trim() : '';
+      const spaceNameArg = args.spaceName ? String(args.spaceName).trim() : '';
+      const rawBody = String(args.body || '');
+      if (!pageId && !pageTitle) {
+        const missing: string[] = ['id','pageTitle'];
+        return needInput('Which page should I comment on?', missing, ['Provide page ID.', 'Or provide the exact pageTitle (optionally spaceKey or spaceName).']);
       }
+      if (!rawBody) {
+        return needInput('What should the comment say?', ['body'], ['Provide the comment body (plain text is okay).']);
+      }
+
+      // Resolve spaceName -> spaceKey if needed
+      let spaceKey = spaceKeyArg;
+      if (!spaceKey && spaceNameArg) {
+        const pageSize = 100;
+        for (let start = 0; start < 1000; start += pageSize) {
+          const url = `${conf.baseUrl}/wiki/rest/api/space?limit=${pageSize}&start=${start}`;
+          const r = await safeFetchJson(url, { headers: h() });
+          if (!r.ok) break;
+          const results = r.data?.results || [];
+          const match = results.find((s: any) => String(s?.name || '').trim().toLowerCase() === spaceNameArg.toLowerCase());
+          if (match) { spaceKey = match.key as string; break; }
+          if (!r.data?._links?.next || results.length < pageSize) break;
+        }
+        if (!spaceKey) return needInput(`I couldn’t find a space named "${spaceNameArg}". Which space should I use?`, ['spaceKey','spaceName'], ['Provide spaceKey (e.g., ENG).', 'Or provide the exact spaceName.']);
+      }
+
+      // Resolve pageTitle -> pageId if needed
+      if (!pageId && pageTitle) {
+        let url = `${conf.baseUrl}/wiki/rest/api/content?type=page&title=${encodeURIComponent(pageTitle)}&limit=10`;
+        if (spaceKey) url += `&spaceKey=${encodeURIComponent(spaceKey)}`;
+        const r = await safeFetchJson(url, { headers: h() });
+        if (!r.ok) return { message: `Find page by title failed: HTTP ${r.status}` };
+        const match = (r.data?.results || []).find((p: any) => String(p?.title).trim().toLowerCase() === pageTitle.toLowerCase());
+        if (!match) return { message: 'No page found with that title.' };
+        pageId = String(match.id);
+      }
+
       const postUrl = `${conf.baseUrl}/wiki/rest/api/content`;
-      const payload = { type: 'comment', container: { id: pageId, type: 'page' }, body: { storage: { value: body, representation: 'storage' } } } as any;
+      const storageBody = wrapToStorageHtml(rawBody);
+      const payload = { type: 'comment', container: { id: pageId, type: 'page' }, body: { storage: { value: storageBody, representation: 'storage' } } } as any;
       const pr = await safeFetchJson(postUrl, { method: 'POST', headers: h({ 'Content-Type': 'application/json' }), body: JSON.stringify(payload) });
       if (!pr.ok) return { message: pr.status === 404 ? 'Page not found.' : `Add comment failed: HTTP ${pr.status}` };
       const created = pr.data;
@@ -860,7 +899,7 @@ async function handleConfluenceAsync(msg: any): Promise<any> {
       const comment = gr.data;
       const nextVersion = (comment?.version?.number || 0) + 1;
       const putUrl = `${conf.baseUrl}/wiki/rest/api/content/${commentId}`;
-      const payload = { id: commentId, type: 'comment', version: { number: nextVersion }, body: { storage: { value: body, representation: 'storage' } } } as any;
+  const payload = { id: commentId, type: 'comment', version: { number: nextVersion }, body: { storage: { value: wrapToStorageHtml(body), representation: 'storage' } } } as any;
       const ur = await safeFetchJson(putUrl, { method: 'PUT', headers: h({ 'Content-Type': 'application/json' }), body: JSON.stringify(payload) });
       if (!ur.ok) return { message: `Update comment failed: HTTP ${ur.status}` };
       return { id: commentId };
@@ -988,4 +1027,12 @@ function htmlToText(html: string) {
     .replace(/<[^>]+>/g, '')
     .replace(/&nbsp;/g, ' ')
     .replace(/&amp;/g, '&');
+}
+
+function wrapToStorageHtml(input: string) {
+  const s = String(input || '').trim();
+  // If looks like HTML tag present, assume it’s already storage HTML
+  if (/</.test(s) && />/.test(s)) return s;
+  // Otherwise wrap as a paragraph
+  return `<p>${s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>`;
 }
