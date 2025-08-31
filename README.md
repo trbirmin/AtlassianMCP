@@ -76,7 +76,7 @@ Use the included `openapi-mcp.yaml` to define a single MCP action endpoint.
 1) Open your Copilot in Copilot Studio.
 2) Go to the Actions/Plugins area and add your custom connector.
 3) Select the operation (InvokeMCP). The agent will send MCP JSON-RPC messages to `/mcp`.
-4) Test: Ask the Copilot to “list Confluence spaces” (uses the included tools) or “echo hello”.
+4) Test: Ask the Copilot to “list Confluence spaces”, “list recent Confluence pages”, or “who am I in Confluence?”.
 
 Notes
 - SSE is being deprecated in August 2025; this server prefers JSON and supports SSE only when explicitly requested.

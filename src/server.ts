@@ -90,6 +90,11 @@ function normalizeToolName(name: string | undefined): string {
     'confluence.search': 'searchConfluence',
     'confluence.getSpace': 'getSpace',
     'confluence.me': 'whoAmI',
+  'confluence.listRecentPages': 'listRecentPages',
+  'confluence.getPageHistory': 'getPageHistory',
+  'confluence.listTrashedPages': 'listTrashedPages',
+  'confluence.findPageByTitle': 'findPageByTitle',
+  'confluence.getPageTree': 'getPageTree',
     // canonical passthrough
     'listSpaces': 'listSpaces',
     'listPagesInSpace': 'listPagesInSpace',
@@ -107,6 +112,11 @@ function normalizeToolName(name: string | undefined): string {
     'searchConfluence': 'searchConfluence',
     'getSpace': 'getSpace',
     'whoAmI': 'whoAmI',
+  'listRecentPages': 'listRecentPages',
+  'getPageHistory': 'getPageHistory',
+  'listTrashedPages': 'listTrashedPages',
+  'findPageByTitle': 'findPageByTitle',
+  'getPageTree': 'getPageTree',
   // no built-ins
   };
   return map[name] || name;
@@ -198,6 +208,18 @@ const mcpHandler = (req: Request, res: Response) => {
             },
           },
           {
+            name: 'listRecentPages',
+            description: 'List recently updated pages (optionally scoped to a space)',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                spaceKey: { type: 'string', description: 'Optional Confluence space key' },
+                limit: { type: 'number', description: 'Max pages (default 10, max 100)' },
+              },
+              additionalProperties: false,
+            },
+          },
+          {
             name: 'listPagesInSpace',
             description: 'List pages within a Confluence space',
             inputSchema: {
@@ -220,6 +242,19 @@ const mcpHandler = (req: Request, res: Response) => {
                 spaceKey: { type: 'string', description: 'Optional space key to scope the search' },
               },
               required: ['query'],
+              additionalProperties: false,
+            },
+          },
+          {
+            name: 'findPageByTitle',
+            description: 'Find a page by exact title (optionally within a space)',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                title: { type: 'string', description: 'Exact page title' },
+                spaceKey: { type: 'string', description: 'Optional space key' },
+              },
+              required: ['title'],
               additionalProperties: false,
             },
           },
@@ -264,6 +299,18 @@ const mcpHandler = (req: Request, res: Response) => {
             },
           },
           {
+            name: 'listTrashedPages',
+            description: 'List trashed pages (optionally scoped to a space)',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                spaceKey: { type: 'string', description: 'Optional Confluence space key' },
+                limit: { type: 'number', description: 'Max pages (default 10, max 100)' },
+              },
+              additionalProperties: false,
+            },
+          },
+          {
             name: 'getPage',
             description: 'Get a page by ID with content',
             inputSchema: {
@@ -282,6 +329,19 @@ const mcpHandler = (req: Request, res: Response) => {
                 id: { type: 'string', description: 'Parent page ID' },
                 type: { type: 'string', description: 'child type: page|comment|attachment (default page)' },
                 limit: { type: 'number', description: 'Max items (default 25, max 100)' },
+              },
+              required: ['id'],
+              additionalProperties: false,
+            },
+          },
+          {
+            name: 'getPageHistory',
+            description: 'List version history metadata for a page',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                id: { type: 'string', description: 'Page ID' },
+                limit: { type: 'number', description: 'Max versions (default 10, max 100)' },
               },
               required: ['id'],
               additionalProperties: false,
@@ -323,6 +383,19 @@ const mcpHandler = (req: Request, res: Response) => {
             inputSchema: {
               type: 'object',
               properties: { id: { type: 'string', description: 'Page ID' }, limit: { type: 'number', description: 'Max attachments (default 25, max 100)' } },
+              required: ['id'],
+              additionalProperties: false,
+            },
+          },
+          {
+            name: 'getPageTree',
+            description: 'Return a simple children tree for a page up to a given depth',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                id: { type: 'string', description: 'Root page ID' },
+                depth: { type: 'number', description: 'Depth (default 2, max 4)' },
+              },
               required: ['id'],
               additionalProperties: false,
             },
@@ -371,13 +444,17 @@ const mcpHandler = (req: Request, res: Response) => {
   if (true) {
       const confluenceCanonicals = new Set([
         'listSpaces',
+  'listRecentPages',
         'listPagesInSpace',
         'summarizePage',
+  'findPageByTitle',
         'createPage',
         'updatePage',
         'movePageToTrash',
+  'listTrashedPages',
         'getPage',
         'listPageChildren',
+  'getPageHistory',
         'listPageComments',
         'listPageAttachments',
         'listPageLabels',
@@ -548,7 +625,7 @@ async function handleConfluenceAsync(msg: any): Promise<any> {
   };
 
   try {
-    if (name === 'confluence.listSpaces') {
+    if (name === 'listSpaces') {
       const limit = Math.min(Math.max(Number(args.limit) || 20, 1), 100);
       const url = `${conf.baseUrl}/wiki/rest/api/space?limit=${limit}`;
       const r = await safeFetchJson(url, { headers: h() });
@@ -560,7 +637,7 @@ async function handleConfluenceAsync(msg: any): Promise<any> {
       if (!items.length) return { spaces: [], message: 'No spaces found.' };
       return { spaces: items };
     }
-    if (name === 'confluence.listPages') {
+    if (name === 'listPagesInSpace') {
       const spaceKey = String(args.spaceKey || '').trim();
       const limit = Math.min(Math.max(Number(args.limit) || 25, 1), 100);
       if (!spaceKey) return { message: 'spaceKey is required' };
@@ -571,7 +648,7 @@ async function handleConfluenceAsync(msg: any): Promise<any> {
       if (!pages.length) return { pages: [], message: 'No pages found in space.' };
       return { pages };
     }
-    if (name === 'confluence.summarizePage') {
+    if (name === 'summarizePage') {
       const query = String(args.query || '').trim();
       const spaceKey = args.spaceKey ? String(args.spaceKey) : undefined;
       if (!query) return { message: 'query is required' };
@@ -591,7 +668,7 @@ async function handleConfluenceAsync(msg: any): Promise<any> {
       const url = conf.baseUrl + 'wiki' + (page?._links?.webui || '');
       return { id, title: page?.title, url, excerpt: text.slice(0, 1000), content: text };
     }
-    if (name === 'confluence.createPage') {
+    if (name === 'createPage') {
       const spaceKey = String(args.spaceKey || '').trim();
       const title = String(args.title || '').trim();
       const body = String(args.body || '');
@@ -606,7 +683,7 @@ async function handleConfluenceAsync(msg: any): Promise<any> {
       const url = conf.baseUrl + 'wiki' + (created?._links?.webui || '');
       return { id: created?.id, title: created?.title, url };
     }
-    if (name === 'confluence.updatePage') {
+    if (name === 'updatePage') {
       const pageId = String(args.id || '').trim();
       const newTitle = args.title ? String(args.title) : undefined;
       const newBody = args.body ? String(args.body) : undefined;
@@ -625,7 +702,7 @@ async function handleConfluenceAsync(msg: any): Promise<any> {
       const url = conf.baseUrl + 'wiki' + (updated?._links?.webui || '');
       return { id: updated?.id, title: updated?.title, url };
     }
-    if (name === 'confluence.trashPage') {
+    if (name === 'movePageToTrash') {
       const pageId = String(args.id || '').trim();
       if (!pageId) return { message: 'id is required' };
       const delUrl = `${conf.baseUrl}/wiki/rest/api/content/${pageId}`;
@@ -633,7 +710,7 @@ async function handleConfluenceAsync(msg: any): Promise<any> {
       if (!dr.ok) return { message: dr.status === 404 ? 'Page not found.' : dr.status === 403 || dr.status === 401 ? 'Not authorized to trash page.' : `Trash page failed: HTTP ${dr.status}` };
       return { id: pageId, message: 'Page moved to trash.' };
     }
-    if (name === 'confluence.getPage') {
+    if (name === 'getPage') {
       const pageId = String(args.id || '').trim();
       if (!pageId) return { message: 'id is required' };
       const getUrl = `${conf.baseUrl}/wiki/rest/api/content/${pageId}?expand=body.storage,version,space`;
@@ -645,7 +722,7 @@ async function handleConfluenceAsync(msg: any): Promise<any> {
       const url = conf.baseUrl + 'wiki' + (page?._links?.webui || '');
       return { id: page?.id, title: page?.title, url, content: text };
     }
-    if (name === 'confluence.listChildren') {
+    if (name === 'listPageChildren') {
       const pageId = String(args.id || '').trim();
       const type = (String(args.type || 'page') as 'page' | 'comment' | 'attachment');
       const limit = Math.min(Math.max(Number(args.limit) || 25, 1), 100);
@@ -657,7 +734,7 @@ async function handleConfluenceAsync(msg: any): Promise<any> {
       if (!items.length) return { items: [], message: `No ${type} children found.` };
       return { items };
     }
-    if (name === 'confluence.listComments') {
+    if (name === 'listPageComments') {
       const pageId = String(args.id || '').trim();
       const limit = Math.min(Math.max(Number(args.limit) || 25, 1), 100);
       if (!pageId) return { message: 'id is required' };
@@ -668,7 +745,7 @@ async function handleConfluenceAsync(msg: any): Promise<any> {
       if (!comments.length) return { comments: [], message: 'No comments found.' };
       return { comments };
     }
-    if (name === 'confluence.listAttachments') {
+    if (name === 'listPageAttachments') {
       const pageId = String(args.id || '').trim();
       const limit = Math.min(Math.max(Number(args.limit) || 25, 1), 100);
       if (!pageId) return { message: 'id is required' };
@@ -685,7 +762,7 @@ async function handleConfluenceAsync(msg: any): Promise<any> {
       if (!attachments.length) return { attachments: [], message: 'No attachments found.' };
       return { attachments };
     }
-    if (name === 'confluence.getLabels') {
+    if (name === 'listPageLabels') {
       const pageId = String(args.id || '').trim();
       const limit = Math.min(Math.max(Number(args.limit) || 25, 1), 100);
       if (!pageId) return { message: 'id is required' };
@@ -696,7 +773,7 @@ async function handleConfluenceAsync(msg: any): Promise<any> {
       if (!labels.length) return { labels: [], message: 'No labels found.' };
       return { labels };
     }
-    if (name === 'confluence.addComment') {
+    if (name === 'addPageComment') {
       const pageId = String(args.id || '').trim();
       const body = String(args.body || '');
       if (!pageId || !body) return { message: 'id and body are required' };
@@ -707,7 +784,7 @@ async function handleConfluenceAsync(msg: any): Promise<any> {
       const created = pr.data;
       return { id: created?.id };
     }
-    if (name === 'confluence.updateComment') {
+    if (name === 'updateComment') {
       const commentId = String(args.id || '').trim();
       const body = String(args.body || '');
       if (!commentId || !body) return { message: 'id and body are required' };
@@ -722,7 +799,7 @@ async function handleConfluenceAsync(msg: any): Promise<any> {
       if (!ur.ok) return { message: `Update comment failed: HTTP ${ur.status}` };
       return { id: commentId };
     }
-    if (name === 'confluence.search') {
+    if (name === 'searchConfluence') {
       const cql = String(args.cql || '').trim();
       const limit = Math.min(Math.max(Number(args.limit) || 10, 1), 100);
       if (!cql) return { message: 'cql is required' };
@@ -733,7 +810,7 @@ async function handleConfluenceAsync(msg: any): Promise<any> {
       if (!results.length) return { results: [], message: 'No search results found.' };
       return { results };
     }
-    if (name === 'confluence.getSpace') {
+    if (name === 'getSpace') {
       const key = String(args.key || '').trim();
       if (!key) return { message: 'key is required' };
       const url = `${conf.baseUrl}/wiki/rest/api/space/${encodeURIComponent(key)}`;
@@ -743,12 +820,89 @@ async function handleConfluenceAsync(msg: any): Promise<any> {
       const urlOut = conf.baseUrl + 'wiki' + (space?._links?.webui || '');
       return { key: space?.key, name: space?.name, url: urlOut, id: space?.id };
     }
-    if (name === 'confluence.me') {
+    if (name === 'whoAmI') {
       const url = `${conf.baseUrl}/wiki/rest/api/user/current`;
       const r = await safeFetchJson(url, { headers: h() });
       if (!r.ok) return { message: r.status === 401 || r.status === 403 ? 'Not authorized to get current user.' : `Get current user failed: HTTP ${r.status}` };
       const me = r.data;
       return { accountId: me?.accountId, email: me?.email, displayName: me?.displayName, username: me?.username };
+    }
+    if (name === 'listRecentPages') {
+      const spaceKey = args.spaceKey ? String(args.spaceKey).trim() : '';
+      const limit = Math.min(Math.max(Number(args.limit) || 10, 1), 100);
+      const cql = `type=page` + (spaceKey ? ` AND space=${spaceKey}` : '') + ` ORDER BY lastmodified desc`;
+      const url = `${conf.baseUrl}/wiki/rest/api/search?cql=${encodeURIComponent(cql)}&limit=${limit}`;
+      const r = await safeFetchJson(url, { headers: h() });
+      if (!r.ok) return { message: `List recent pages failed: HTTP ${r.status}` };
+      const results = (r.data?.results || []).map((x: any) => ({ id: x?.content?.id || x?.id, title: x?.title || x?.content?.title, url: conf.baseUrl + 'wiki' + (x?._links?.webui || ''), lastModified: x?.lastModified || x?._links?.lastModified }));
+      if (!results.length) return { pages: [], message: 'No recent pages found.' };
+      return { pages: results };
+    }
+    if (name === 'getPageHistory') {
+      const pageId = String(args.id || '').trim();
+      const limit = Math.min(Math.max(Number(args.limit) || 10, 1), 100);
+      if (!pageId) return { message: 'id is required' };
+      const url = `${conf.baseUrl}/wiki/rest/api/content/${pageId}/version?limit=${limit}`;
+      const r = await safeFetchJson(url, { headers: h() });
+      if (!r.ok) return { message: r.status === 404 ? 'Page not found.' : `Get page history failed: HTTP ${r.status}` };
+      const versions = (r.data?.results || []).map((v: any) => ({ number: v?.number, when: v?.when, by: v?.by?.displayName || v?.by?.email || v?.by?.username }));
+      if (!versions.length) return { versions: [], message: 'No versions found.' };
+      return { versions };
+    }
+    if (name === 'listTrashedPages') {
+      const spaceKey = args.spaceKey ? String(args.spaceKey).trim() : '';
+      const limit = Math.min(Math.max(Number(args.limit) || 10, 1), 100);
+      const base = `${conf.baseUrl}/wiki/rest/api/content?type=page&status=trashed&limit=${limit}`;
+      const url = spaceKey ? `${base}&spaceKey=${encodeURIComponent(spaceKey)}` : base;
+      const r = await safeFetchJson(url, { headers: h() });
+      if (!r.ok) return { message: `List trashed pages failed: HTTP ${r.status}` };
+      const pages = (r.data?.results || []).map((p: any) => ({ id: p.id, title: p.title, url: conf.baseUrl + 'wiki' + (p?._links?.webui || '') }));
+      if (!pages.length) return { pages: [], message: 'Trash is empty.' };
+      return { pages };
+    }
+    if (name === 'findPageByTitle') {
+      const title = String(args.title || '').trim();
+      const spaceKey = args.spaceKey ? String(args.spaceKey).trim() : '';
+      if (!title) return { message: 'title is required' };
+      let url = `${conf.baseUrl}/wiki/rest/api/content?type=page&title=${encodeURIComponent(title)}&limit=10`;
+      if (spaceKey) url += `&spaceKey=${encodeURIComponent(spaceKey)}`;
+      const r = await safeFetchJson(url, { headers: h() });
+      if (!r.ok) return { message: `Find page by title failed: HTTP ${r.status}` };
+      const match = (r.data?.results || []).find((p: any) => String(p?.title).trim().toLowerCase() === title.toLowerCase());
+      if (!match) return { message: 'No page found with that title.' };
+      const out = { id: match.id, title: match.title, url: conf.baseUrl + 'wiki' + (match?._links?.webui || '') };
+      return out;
+    }
+    if (name === 'getPageTree') {
+      const rootId = String(args.id || '').trim();
+      const depth = Math.min(Math.max(Number(args.depth) || 2, 1), 4);
+      if (!rootId) return { message: 'id is required' };
+      // fetch root page basic info
+      const rootUrl = `${conf.baseUrl}/wiki/rest/api/content/${rootId}`;
+      const rr = await safeFetchJson(rootUrl, { headers: h() });
+      if (!rr.ok) return { message: rr.status === 404 ? 'Root page not found.' : `Get root page failed: HTTP ${rr.status}` };
+      const root = rr.data;
+      const fetchChildren = async (pid: string, d: number): Promise<any[]> => {
+        if (d <= 0) return [];
+        const url = `${conf.baseUrl}/wiki/rest/api/content/${pid}/child/page?limit=25`;
+        const r = await safeFetchJson(url, { headers: h() });
+        if (!r.ok) return [];
+        const items = r.data?.results || [];
+        const results: any[] = [];
+        for (const ch of items) {
+          const node: any = { id: ch.id, title: ch.title, url: conf.baseUrl + 'wiki' + (ch?._links?.webui || '') };
+          node.children = await fetchChildren(ch.id, d - 1);
+          results.push(node);
+        }
+        return results;
+      };
+      const tree = {
+        id: root?.id,
+        title: root?.title,
+        url: conf.baseUrl + 'wiki' + (root?._links?.webui || ''),
+        children: await fetchChildren(rootId, depth - 1),
+      };
+      return tree;
     }
     return { message: `Unsupported Confluence tool: ${name}` };
   } catch (e: any) {

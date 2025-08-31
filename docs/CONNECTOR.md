@@ -61,8 +61,9 @@ Troubleshooting
 2. Go to Actions/Plugins → Add your custom connector.
 3. Select the `InvokeMCP` operation.
 4. Test with prompts like:
-   - "echo hello" (uses the `echo` tool)
-   - "list confluence spaces" (if Confluence env vars are configured)
+   - "list confluence spaces"
+   - "list recent confluence pages"
+   - "find a page titled 'Team Charter' in space ENG"
 
 ## 5) Notes and best practices
 
