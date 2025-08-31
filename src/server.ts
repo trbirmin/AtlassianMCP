@@ -95,6 +95,7 @@ function normalizeToolName(name: string | undefined): string {
     'confluence.search': 'searchConfluence',
     'confluence.getSpace': 'getSpace',
     'confluence.me': 'whoAmI',
+  'confluence.createSpace': 'createSpace',
   'confluence.listRecentPages': 'listRecentPages',
   'confluence.getPageHistory': 'getPageHistory',
   'confluence.listTrashedPages': 'listTrashedPages',
@@ -102,6 +103,7 @@ function normalizeToolName(name: string | undefined): string {
   'confluence.getPageTree': 'getPageTree',
     // canonical passthrough
     'listSpaces': 'listSpaces',
+  'createSpace': 'createSpace',
   'help': 'help',
     'listPagesInSpace': 'listPagesInSpace',
     'summarizePage': 'summarizePage',
@@ -215,6 +217,21 @@ const mcpHandler = (req: Request, res: Response) => {
               properties: {
                 limit: { type: 'number', description: 'Max spaces to return (default 20, max 100)' },
               },
+              additionalProperties: false,
+            },
+          },
+          {
+            name: 'createSpace',
+            description: 'Create a Confluence space (requires admin permissions)',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                key: { type: 'string', description: 'Space key (2-255 chars, letters/digits)' },
+                name: { type: 'string', description: 'Space name' },
+                description: { type: 'string', description: 'Optional plain-text description' },
+                type: { type: 'string', description: 'global (default) | personal' },
+              },
+              required: ['key', 'name'],
               additionalProperties: false,
             },
           },
@@ -491,6 +508,7 @@ const mcpHandler = (req: Request, res: Response) => {
         'summarizePage',
   'findPageByTitle',
         'createPage',
+  'createSpace',
         'updatePage',
         'movePageToTrash',
   'listTrashedPages',
@@ -688,6 +706,57 @@ async function handleConfluenceAsync(msg: any): Promise<any> {
         ],
       };
       return { spaces: items, message, ui: { adaptiveCard: card } };
+    }
+    if (name === 'createSpace') {
+      const rawKey = String(args.key || '').trim();
+      const spaceName = String(args.name || '').trim();
+      const description = args.description ? String(args.description) : '';
+      const typeArg = (String(args.type || 'global').trim().toLowerCase());
+
+      const missing: string[] = [];
+      if (!rawKey) missing.push('key');
+      if (!spaceName) missing.push('name');
+      if (missing.length) {
+        return needInput('I can create the space—what key and name should I use?', missing, [
+          'Provide the space key (2-255 letters/digits, e.g., ENG).',
+          'Provide the space name (e.g., Engineering).',
+        ]);
+      }
+
+      const key = rawKey.toUpperCase();
+      // Basic key validation (Confluence typically allows A-Z 0-9, underscore; keep it conservative)
+      if (!/^[A-Z0-9]{2,255}$/.test(key)) {
+        return needInput('The space key must be 2-255 characters of A-Z or 0-9.', ['key'], [
+          'Provide a key like ENG, HR, DOCS01.',
+        ]);
+      }
+
+      if (typeArg === 'personal') {
+        // Personal space creation via API is typically restricted/not supported in Cloud
+        return { message: 'Creating personal spaces via API is not supported. Use type="global".' };
+      }
+
+      const postUrl = `${conf.baseUrl}/wiki/rest/api/space`;
+      const payload: any = { key, name: spaceName, type: 'global' };
+      if (description) payload.description = { plain: { value: description, representation: 'plain' } };
+      const pr = await safeFetchJson(postUrl, { method: 'POST', headers: h({ 'Content-Type': 'application/json' }), body: JSON.stringify(payload) });
+      if (!pr.ok) {
+        if (pr.status === 409) return { message: 'A space with that key already exists.' };
+        if (pr.status === 401 || pr.status === 403) return { message: 'Not authorized to create spaces. You need Confluence admin permissions.' };
+        return { message: `Create space failed: HTTP ${pr.status}` };
+      }
+      const space = pr.data;
+      const url = conf.baseUrl + '/wiki' + (space?._links?.webui || '');
+      return {
+        key: space?.key || key,
+        name: space?.name || spaceName,
+        id: space?.id,
+        url,
+        ui: { adaptiveCard: adaptiveCard({ title: `Space created: ${space?.name || spaceName}`, url, facts: [
+          { title: 'Key', value: key },
+          { title: 'ID', value: String(space?.id || '') },
+        ] }) },
+      };
     }
     if (name === 'listPagesInSpace') {
       const spaceKey = String(args.spaceKey || '').trim();
