@@ -107,9 +107,7 @@ function normalizeToolName(name: string | undefined): string {
     'searchConfluence': 'searchConfluence',
     'getSpace': 'getSpace',
     'whoAmI': 'whoAmI',
-    // built-ins
-    'help': 'help',
-    'echo': 'echo',
+  // no built-ins
   };
   return map[name] || name;
 }
@@ -188,25 +186,6 @@ const mcpHandler = (req: Request, res: Response) => {
       id,
       result: {
         tools: [
-          {
-            name: 'help',
-            description: 'Show available tools and example usage',
-            inputSchema: {
-              type: 'object',
-              properties: {},
-              additionalProperties: false,
-            },
-          },
-          {
-            name: 'echo',
-            description: 'Reply with the provided text',
-            inputSchema: {
-              type: 'object',
-              properties: { text: { type: 'string', description: 'Text to echo' } },
-              required: ['text'],
-              additionalProperties: false,
-            },
-          },
           {
             name: 'listSpaces',
             description: 'List Confluence spaces you can access',
@@ -389,45 +368,7 @@ const mcpHandler = (req: Request, res: Response) => {
     const name = msg?.params?.name;
     const args = msg?.params?.arguments ?? {};
     const canonical = normalizeToolName(name);
-    if (canonical === 'help') {
-      const text = [
-        'Available tools:',
-        '- help: Show this help.',
-        "- echo: Echo back text. Usage: name='echo', arguments: { text: 'Hello' }",
-        "- listSpaces: List spaces (optional: limit)",
-        "- listPagesInSpace: List pages in a space (spaceKey, optional limit)",
-        "- summarizePage: Find a page by title and return content (query, optional spaceKey)",
-        "- createPage: Create a page (spaceKey, title, body, optional parentId)",
-        "- updatePage: Update a page (id, optional title/body)",
-        "- movePageToTrash: Move a page to trash (id)",
-        "- getPage: Get a page by id",
-        "- listPageChildren: List children (id, optional type, limit)",
-        "- listPageComments: List comments on a page",
-        "- listPageAttachments: List attachments on a page",
-        "- listPageLabels: List labels on a page",
-        "- addPageComment: Add a comment to a page",
-        "- updateComment: Update an existing comment",
-        "- searchConfluence: Search using CQL",
-        "- getSpace: Get space details",
-        "- whoAmI: Get current user profile",
-      ].join('\n');
-      return {
-        jsonrpc: '2.0',
-        id,
-        result: { content: [{ type: 'text', text }] },
-      };
-    } else if (canonical === 'echo') {
-      const text = typeof args.text === 'string' ? args.text : JSON.stringify(args);
-      return {
-        jsonrpc: '2.0',
-        id,
-        result: {
-          content: [
-            { type: 'text', text },
-          ],
-        },
-      };
-    } else {
+  if (true) {
       const confluenceCanonicals = new Set([
         'listSpaces',
         'listPagesInSpace',
