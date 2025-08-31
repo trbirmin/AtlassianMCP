@@ -298,6 +298,10 @@ const mcpHandler = (req: Request, res: Response) => {
                 body: { type: 'string', description: 'Page body; plain text is auto-wrapped to storage HTML' },
                 parentId: { type: 'string', description: 'Optional parent page ID' },
               },
+              anyOf: [
+                { required: ['spaceKey', 'title', 'body'] },
+                { required: ['spaceName', 'title', 'body'] },
+              ],
               // Require title and body; require at least one of spaceKey or spaceName (documented in description)
               required: ['title', 'body'],
               additionalProperties: false,
