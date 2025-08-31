@@ -448,14 +448,15 @@ const mcpHandler = (req: Request, res: Response) => {
     const args = msg?.params?.arguments ?? {};
     const canonical = normalizeToolName(name);
     if (canonical === 'help') {
-      // Build the same tools array as handleToolsList without altering its shape
-      const tools = handleToolsList({ id }).result.tools;
+      // Build a concise list of capabilities (no schemas)
+      const tools = handleToolsList({ id }).result.tools as Array<{ name: string; description?: string }>;
+      const capabilities = tools.map(t => ({ name: t.name, description: t.description || '' }));
       return {
         jsonrpc: '2.0',
         id,
         result: {
-          message: 'Available tools (call via tools/call with the name and arguments):',
-          tools,
+          message: 'Capabilities available via MCP tools:',
+          capabilities,
         },
       };
     }
