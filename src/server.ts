@@ -566,7 +566,7 @@ async function handleConfluenceAsync(msg: any): Promise<any> {
         if (r.status === 401 || r.status === 403) return { message: 'Confluence authentication failed. Check credentials.' };
         return { message: `List spaces failed: HTTP ${r.status}` };
       }
-      const items = (r.data?.results || []).map((s: any) => ({ key: s.key, name: s.name, id: s.id, url: conf.baseUrl + (s?._links?.webui || '') }));
+      const items = (r.data?.results || []).map((s: any) => ({ key: s.key, name: s.name, id: s.id, url: conf.baseUrl + 'wiki' + (s?._links?.webui || '') }));
       if (!items.length) return { spaces: [], message: 'No spaces found.' };
       return { spaces: items };
     }

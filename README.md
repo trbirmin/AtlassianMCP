@@ -4,17 +4,16 @@ A minimal Model Context Protocol (MCP) server implementing the Streamable HTTP t
 
 ## Features
 - Streamable HTTP MCP endpoint at `/mcp` supporting POST and GET per spec (2025-03-26)
-- SSE streaming for batched request responses when client sends `Accept: text/event-stream`
-- Session header `Mcp-Session-Id` returned on initialize
-- Secure CORS origin allowlist via `ALLOWED_ORIGINS`
-- OpenAPI file (`openapi-mcp.yaml`) with `x-ms-agentic-protocol: mcp-streamable-1.0`
-- GitHub Actions workflow to build and deploy to Azure App Service
+- JSON-first responses; optional SSE when client sends `Accept: text/event-stream`
+- `Mcp-Session-Id` header returned on initialize
+- Secure CORS allowlist via `ALLOWED_ORIGINS`
+- OpenAPI (`openapi-mcp.yaml`) with `x-ms-agentic-protocol: mcp-streamable-1.0`
+- GitHub Actions OIDC pipeline to deploy to Azure App Service
 
-## Configure
-- Node.js 18+
-- Env vars:
-  - `PORT` (optional)
-  - `ALLOWED_ORIGINS` comma-separated list for CORS
+## Prerequisites
+- Node.js 18+ (Node 20 recommended)
+- Azure subscription with permission to create App Service and role assignments
+- GitHub repository for this source code
 
 ## Local run
 ```powershell
@@ -25,21 +24,68 @@ npm start
 npm run dev
 ```
 
-## Azure App Service
-- Create a Windows or Linux Web App with Node 20 or 22 runtime and enable Always On.
-- Set App Settings:
-  - `WEBSITE_NODE_DEFAULT_VERSION` to ~20 if needed
-  - `ALLOWED_ORIGINS` per your Copilot domain(s)
-- Add the publish profile secret `AZURE_WEBAPP_PUBLISH_PROFILE` and `AZURE_WEBAPP_NAME` to GitHub repo secrets.
-- Push to `main` to trigger deployment.
+## Deploy to Azure App Service (GitHub Actions + OIDC)
+1) Create the Web App (Linux, Node 20 or 22):
+  - Runtime stack: Node 20 LTS or Node 22 LTS
+  - Enable Always On (Configuration > General settings)
+  - App Settings (Configuration > Application settings):
+    - `ALLOWED_ORIGINS` (optional): comma-separated origins if your caller is a browser
+    - `WEBSITE_NODE_DEFAULT_VERSION` (optional): `~20`
+    - Confluence (optional): `CONFLUENCE_BASE_URL`, `CONFLUENCE_EMAIL`, `CONFLUENCE_API_TOKEN`
 
-## Copilot Studio custom connector
-- In Power Apps, create a Custom Connector and import `openapi-mcp.yaml`.
-- Ensure `host` is your Azure Web App host (e.g., `atlassian-mcp.azurewebsites.net`).
-- Copilot Studio will use Streamable (GA); SSE is being deprecated Aug 2025 per docs.
+2) Grant deployment identity via Entra ID (OIDC):
+  - Create (or use) an App registration (Service Principal)
+  - Copy its IDs for later:
+    - Application (client) ID = AZURE_CLIENT_ID
+    - Directory (tenant) ID = AZURE_TENANT_ID
+  - Add a Federated credential:
+    - Provider: GitHub Actions
+    - Entity type: Branch
+    - Organization/Repository: your GitHub `owner/repo`
+    - Branch: `main`
+    - Subject will look like: `repo:OWNER/REPO:ref:refs/heads/main`
+  - Assign RBAC to the Web App (or resource group):
+    - Role: Website Contributor (or Contributor)
+
+3) Add GitHub repository secrets (Repo Settings > Secrets and variables > Actions):
+  - `AZURE_CLIENT_ID` = App registration client ID
+  - `AZURE_TENANT_ID` = Directory (tenant) ID
+  - `AZURE_SUBSCRIPTION_ID` = your subscription ID
+  - `AZURE_WEBAPP_NAME` = the Web App name you created
+
+4) Push to `main` to deploy:
+  - The workflow `.github/workflows/azure-webapps.yml` builds the project and deploys the `dist/` bundle with startup `node dist/server.js`.
+
+5) Verify:
+  - Browse `https://<your-app>.azurewebsites.net/healthz` → should return `ok`
+  - MCP endpoint: `POST https://<your-app>.azurewebsites.net/mcp`
+
+## Create the Copilot Studio custom connector (MCP)
+Use the included `openapi-mcp.yaml` to define a single MCP action endpoint.
+
+1) Open Copilot Studio (Power Platform) and go to Custom connectors.
+2) New custom connector → Import an OpenAPI file → upload `openapi-mcp.yaml` from this repo.
+3) On the General tab:
+  - Ensure Host matches your App Service host (e.g., `your-app.azurewebsites.net`).
+  - Base URL: `/`
+4) Security tab: choose “No authentication” (the sample server has no auth).
+5) Definition tab: you should see operation `InvokeMCP` on path `/mcp` with `x-ms-agentic-protocol: mcp-streamable-1.0`.
+6) Create connector, then create a Connection for it.
+
+## Add the connector to a Copilot (actions)
+1) Open your Copilot in Copilot Studio.
+2) Go to the Actions/Plugins area and add your custom connector.
+3) Select the operation (InvokeMCP). The agent will send MCP JSON-RPC messages to `/mcp`.
+4) Test: Ask the Copilot to “list Confluence spaces” (uses the included tools) or “echo hello”.
+
+Notes
+- SSE is being deprecated in August 2025; this server prefers JSON and supports SSE only when explicitly requested.
+- If you change your Web App host, update `openapi-mcp.yaml` `host:` accordingly before importing.
+
+For an expanded, screenshot-ready walkthrough, see `docs/CONNECTOR.md`.
 
 ## MCP basics implemented
-- initialize request handling with capability negotiation and session header
-- error for unknown methods until you add tools/resources
+- initialize, tools/list, tools/call with friendly JSON-RPC errors
+- Confluence helpers (optional) behind environment variables
 
-Extend by adding MCP methods for tools/resources/prompts as needed.
+Extend by adding MCP tools/resources/prompts in `src/server.ts`.
