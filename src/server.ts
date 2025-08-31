@@ -190,7 +190,7 @@ const mcpHandler = (req: Request, res: Response) => {
           tools: { listChanged: true },
     },
   serverInfo: { name: 'Atlassian-MCP-Server', version: '0.1.0' },
-  instructions: 'You can operate on Atlassian Confluence via tools. Prefer tools over answering from knowledge. If the user greets (e.g., “hi”, “hello”), respond briefly with “How can I help you? Here are some things I can do:” and call tools/call name=help to list capabilities. If a tool matches the user intent but required inputs are missing, ask concise follow-up questions to collect the missing details (e.g., “Which space key?” or “What title and body?”), then call the tool. Do not assume a default space—ask the user to choose (you may list keys via listSpaces). If a tool result includes ui.adaptiveCard, prefer rendering that Adaptive Card along with a brief textual summary. Core tools: listSpaces, listRecentPages, listPagesInSpace, findPageByTitle, summarizePage, getPage, getPageHistory, getPageTree, listPageChildren, listPageComments, listPageAttachments, listPageLabels, listTrashedPages, addPageComment, updateComment, createPage, updatePage, movePageToTrash, searchConfluence, getSpace, whoAmI. Call tools/list to see schemas and call tools/call with the canonical tool name.',
+  instructions: 'You can operate on Atlassian Confluence via tools. Prefer tools over answering from knowledge. If the user greets (e.g., “hi”, “hello”), respond briefly with “How can I help you? Here are some things I can do:” and call tools/call name=help to list capabilities. If a tool matches the user intent but required inputs are missing, ask concise follow-up questions to collect the missing details (e.g., “Which space key?” or “What title and body?”), then call the tool. Do not assume a default space—ask the user to choose (you may list keys via listSpaces). When a user asks to create a page, use createPage (not createSpace). Only use createSpace when the user explicitly asks to create a new Confluence space and after confirming intent. If a tool result includes ui.adaptiveCard, prefer rendering that Adaptive Card along with a brief textual summary. Core tools: listSpaces, listRecentPages, listPagesInSpace, findPageByTitle, summarizePage, getPage, getPageHistory, getPageTree, listPageChildren, listPageComments, listPageAttachments, listPageLabels, listTrashedPages, addPageComment, updateComment, createPage, updatePage, movePageToTrash, searchConfluence, getSpace, whoAmI. Call tools/list to see schemas and call tools/call with the canonical tool name.',
       },
     };
 
@@ -222,7 +222,7 @@ const mcpHandler = (req: Request, res: Response) => {
           },
           {
             name: 'createSpace',
-            description: 'Create a Confluence space (requires admin permissions)',
+            description: 'Admin-only: create a Confluence space. Use ONLY when the user explicitly asks to create a new space. Do NOT use for creating pages.',
             inputSchema: {
               type: 'object',
               properties: {
@@ -230,8 +230,9 @@ const mcpHandler = (req: Request, res: Response) => {
                 name: { type: 'string', description: 'Space name' },
                 description: { type: 'string', description: 'Optional plain-text description' },
                 type: { type: 'string', description: 'global (default) | personal' },
+                confirm: { type: 'boolean', description: 'Must be true to proceed (safety confirmation).' },
               },
-              required: ['key', 'name'],
+              required: ['key', 'name', 'confirm'],
               additionalProperties: false,
             },
           },
@@ -288,7 +289,7 @@ const mcpHandler = (req: Request, res: Response) => {
           },
           {
             name: 'createPage',
-            description: 'Create a Confluence page in a space',
+            description: 'Create a Confluence page (not a space) in a chosen space',
             inputSchema: {
               type: 'object',
               properties: {
@@ -716,6 +717,7 @@ async function handleConfluenceAsync(msg: any): Promise<any> {
       const spaceName = String(args.name || '').trim();
       const description = args.description ? String(args.description) : '';
       const typeArg = (String(args.type || 'global').trim().toLowerCase());
+  const confirm = args.confirm === true;
 
       const missing: string[] = [];
       if (!rawKey) missing.push('key');
@@ -724,6 +726,12 @@ async function handleConfluenceAsync(msg: any): Promise<any> {
         return needInput('I can create the space—what key and name should I use?', missing, [
           'Provide the space key (2-255 letters/digits, e.g., ENG).',
           'Provide the space name (e.g., Engineering).',
+        ]);
+      }
+
+      if (!confirm) {
+        return needInput('Creating a new Confluence space requires admin rights. Do you want to proceed?', ['confirm'], [
+          'Set confirm=true to proceed.',
         ]);
       }
 
