@@ -69,6 +69,51 @@ function sendJson(res: Response, obj: unknown) {
   res.status(200).send(obj);
 }
 
+// Tool name normalization: map legacy names to friendly canonical names
+function normalizeToolName(name: string | undefined): string {
+  if (!name) return '';
+  const map: Record<string, string> = {
+    // legacy -> canonical
+    'confluence.listSpaces': 'listSpaces',
+    'confluence.listPages': 'listPagesInSpace',
+    'confluence.summarizePage': 'summarizePage',
+    'confluence.createPage': 'createPage',
+    'confluence.updatePage': 'updatePage',
+    'confluence.trashPage': 'movePageToTrash',
+    'confluence.getPage': 'getPage',
+    'confluence.listChildren': 'listPageChildren',
+    'confluence.listComments': 'listPageComments',
+    'confluence.listAttachments': 'listPageAttachments',
+    'confluence.getLabels': 'listPageLabels',
+    'confluence.addComment': 'addPageComment',
+    'confluence.updateComment': 'updateComment',
+    'confluence.search': 'searchConfluence',
+    'confluence.getSpace': 'getSpace',
+    'confluence.me': 'whoAmI',
+    // canonical passthrough
+    'listSpaces': 'listSpaces',
+    'listPagesInSpace': 'listPagesInSpace',
+    'summarizePage': 'summarizePage',
+    'createPage': 'createPage',
+    'updatePage': 'updatePage',
+    'movePageToTrash': 'movePageToTrash',
+    'getPage': 'getPage',
+    'listPageChildren': 'listPageChildren',
+    'listPageComments': 'listPageComments',
+    'listPageAttachments': 'listPageAttachments',
+    'listPageLabels': 'listPageLabels',
+    'addPageComment': 'addPageComment',
+    'updateComment': 'updateComment',
+    'searchConfluence': 'searchConfluence',
+    'getSpace': 'getSpace',
+    'whoAmI': 'whoAmI',
+    // built-ins
+    'help': 'help',
+    'echo': 'echo',
+  };
+  return map[name] || name;
+}
+
 // MCP endpoint (Streamable HTTP)
 const mcpHandler = (req: Request, res: Response) => {
   const accept = req.header('Accept') || '';
@@ -145,7 +190,7 @@ const mcpHandler = (req: Request, res: Response) => {
         tools: [
           {
             name: 'help',
-            description: 'Describe available MCP tools and how to use them',
+            description: 'Show available tools and example usage',
             inputSchema: {
               type: 'object',
               properties: {},
@@ -154,7 +199,7 @@ const mcpHandler = (req: Request, res: Response) => {
           },
           {
             name: 'echo',
-            description: 'Echo back the provided text',
+            description: 'Reply with the provided text',
             inputSchema: {
               type: 'object',
               properties: { text: { type: 'string', description: 'Text to echo' } },
@@ -163,8 +208,8 @@ const mcpHandler = (req: Request, res: Response) => {
             },
           },
           {
-            name: 'confluence.listSpaces',
-            description: 'List Confluence spaces available to the configured user',
+            name: 'listSpaces',
+            description: 'List Confluence spaces you can access',
             inputSchema: {
               type: 'object',
               properties: {
@@ -174,7 +219,7 @@ const mcpHandler = (req: Request, res: Response) => {
             },
           },
           {
-            name: 'confluence.listPages',
+            name: 'listPagesInSpace',
             description: 'List pages within a Confluence space',
             inputSchema: {
               type: 'object',
@@ -187,8 +232,8 @@ const mcpHandler = (req: Request, res: Response) => {
             },
           },
           {
-            name: 'confluence.summarizePage',
-            description: 'Find a Confluence page by title query and return its content for summarization',
+            name: 'summarizePage',
+            description: 'Find a page by title query and return content for summarization',
             inputSchema: {
               type: 'object',
               properties: {
@@ -200,7 +245,7 @@ const mcpHandler = (req: Request, res: Response) => {
             },
           },
           {
-            name: 'confluence.createPage',
+            name: 'createPage',
             description: 'Create a Confluence page in a space',
             inputSchema: {
               type: 'object',
@@ -215,7 +260,7 @@ const mcpHandler = (req: Request, res: Response) => {
             },
           },
           {
-            name: 'confluence.updatePage',
+            name: 'updatePage',
             description: 'Update a Confluence page (title and/or body)',
             inputSchema: {
               type: 'object',
@@ -230,8 +275,8 @@ const mcpHandler = (req: Request, res: Response) => {
             },
           },
           {
-            name: 'confluence.trashPage',
-            description: 'Move a page to trash (soft delete, not permanent)',
+            name: 'movePageToTrash',
+            description: 'Move a page to trash (soft delete)',
             inputSchema: {
               type: 'object',
               properties: { id: { type: 'string', description: 'Page ID' } },
@@ -240,7 +285,7 @@ const mcpHandler = (req: Request, res: Response) => {
             },
           },
           {
-            name: 'confluence.getPage',
+            name: 'getPage',
             description: 'Get a page by ID with content',
             inputSchema: {
               type: 'object',
@@ -250,7 +295,7 @@ const mcpHandler = (req: Request, res: Response) => {
             },
           },
           {
-            name: 'confluence.listChildren',
+            name: 'listPageChildren',
             description: 'List children of a page (pages, comments, attachments)',
             inputSchema: {
               type: 'object',
@@ -264,7 +309,7 @@ const mcpHandler = (req: Request, res: Response) => {
             },
           },
           {
-            name: 'confluence.listComments',
+            name: 'listPageComments',
             description: 'List comments on a page',
             inputSchema: {
               type: 'object',
@@ -274,7 +319,7 @@ const mcpHandler = (req: Request, res: Response) => {
             },
           },
           {
-            name: 'confluence.getLabels',
+            name: 'listPageLabels',
             description: 'List labels on a page',
             inputSchema: {
               type: 'object',
@@ -284,7 +329,7 @@ const mcpHandler = (req: Request, res: Response) => {
             },
           },
           {
-            name: 'confluence.addComment',
+            name: 'addPageComment',
             description: 'Create a comment on a page',
             inputSchema: {
               type: 'object',
@@ -294,7 +339,7 @@ const mcpHandler = (req: Request, res: Response) => {
             },
           },
           {
-            name: 'confluence.listAttachments',
+            name: 'listPageAttachments',
             description: 'List attachments on a page',
             inputSchema: {
               type: 'object',
@@ -304,7 +349,7 @@ const mcpHandler = (req: Request, res: Response) => {
             },
           },
           {
-            name: 'confluence.updateComment',
+            name: 'updateComment',
             description: 'Update a comment',
             inputSchema: {
               type: 'object',
@@ -314,7 +359,7 @@ const mcpHandler = (req: Request, res: Response) => {
             },
           },
           {
-            name: 'confluence.search',
+            name: 'searchConfluence',
             description: 'Search Confluence using CQL',
             inputSchema: {
               type: 'object',
@@ -324,13 +369,13 @@ const mcpHandler = (req: Request, res: Response) => {
             },
           },
           {
-            name: 'confluence.getSpace',
+            name: 'getSpace',
             description: 'Get space details by key',
             inputSchema: { type: 'object', properties: { key: { type: 'string' } }, required: ['key'], additionalProperties: false },
           },
           {
-            name: 'confluence.me',
-            description: 'Get current user profile',
+            name: 'whoAmI',
+            description: 'Get current Confluence user profile',
             inputSchema: { type: 'object', properties: {}, additionalProperties: false },
           },
         ],
@@ -343,34 +388,35 @@ const mcpHandler = (req: Request, res: Response) => {
     const id = msg.id;
     const name = msg?.params?.name;
     const args = msg?.params?.arguments ?? {};
-    if (name === 'help') {
+    const canonical = normalizeToolName(name);
+    if (canonical === 'help') {
       const text = [
         'Available tools:',
         '- help: Show this help.',
         "- echo: Echo back text. Usage: name='echo', arguments: { text: 'Hello' }",
-        "- confluence.listSpaces: List spaces (optional: limit)",
-  "- confluence.listPages: List pages in a space (spaceKey, optional limit)",
-        "- confluence.summarizePage: Find a page by title and return content (query, optional spaceKey)",
-        "- confluence.createPage: Create a page (spaceKey, title, body, optional parentId)",
-  "- confluence.updatePage: Update a page (id, optional title/body)",
-  "- confluence.trashPage: Move a page to trash (id)",
-  "- confluence.getPage: Get a page by id",
-  "- confluence.listChildren: List children (id, optional type, limit)",
-  "- confluence.listComments: List comments on a page",
-  "- confluence.listAttachments: List attachments on a page",
-  "- confluence.getLabels: List labels on a page",
-  "- confluence.addComment: Add a comment to a page",
-  "- confluence.updateComment: Update an existing comment",
-  "- confluence.search: Search using CQL",
-  "- confluence.getSpace: Get space details",
-  "- confluence.me: Get current user profile",
+        "- listSpaces: List spaces (optional: limit)",
+        "- listPagesInSpace: List pages in a space (spaceKey, optional limit)",
+        "- summarizePage: Find a page by title and return content (query, optional spaceKey)",
+        "- createPage: Create a page (spaceKey, title, body, optional parentId)",
+        "- updatePage: Update a page (id, optional title/body)",
+        "- movePageToTrash: Move a page to trash (id)",
+        "- getPage: Get a page by id",
+        "- listPageChildren: List children (id, optional type, limit)",
+        "- listPageComments: List comments on a page",
+        "- listPageAttachments: List attachments on a page",
+        "- listPageLabels: List labels on a page",
+        "- addPageComment: Add a comment to a page",
+        "- updateComment: Update an existing comment",
+        "- searchConfluence: Search using CQL",
+        "- getSpace: Get space details",
+        "- whoAmI: Get current user profile",
       ].join('\n');
       return {
         jsonrpc: '2.0',
         id,
         result: { content: [{ type: 'text', text }] },
       };
-    } else if (name === 'echo') {
+    } else if (canonical === 'echo') {
       const text = typeof args.text === 'string' ? args.text : JSON.stringify(args);
       return {
         jsonrpc: '2.0',
@@ -381,26 +427,29 @@ const mcpHandler = (req: Request, res: Response) => {
           ],
         },
       };
-    } else if (
-  name === 'confluence.listSpaces' ||
-  name === 'confluence.listPages' ||
-      name === 'confluence.summarizePage' ||
-      name === 'confluence.createPage' ||
-      name === 'confluence.updatePage' ||
-  name === 'confluence.trashPage' ||
-      name === 'confluence.getPage' ||
-      name === 'confluence.listChildren' ||
-      name === 'confluence.listComments' ||
-  name === 'confluence.listAttachments' ||
-  name === 'confluence.getLabels' ||
-      name === 'confluence.addComment' ||
-      name === 'confluence.updateComment' ||
-      name === 'confluence.search' ||
-      name === 'confluence.getSpace' ||
-      name === 'confluence.me'
-    ) {
+    } else {
+      const confluenceCanonicals = new Set([
+        'listSpaces',
+        'listPagesInSpace',
+        'summarizePage',
+        'createPage',
+        'updatePage',
+        'movePageToTrash',
+        'getPage',
+        'listPageChildren',
+        'listPageComments',
+        'listPageAttachments',
+        'listPageLabels',
+        'addPageComment',
+        'updateComment',
+        'searchConfluence',
+        'getSpace',
+        'whoAmI',
+      ]);
+      if (confluenceCanonicals.has(canonical)) {
       // Defer all Confluence operations to the async handler
       return { jsonrpc: '2.0', id, result: { __defer: true } };
+      }
     }
     return {
       jsonrpc: '2.0',
@@ -538,7 +587,7 @@ function getConfluenceAuth() {
 }
 
 async function handleConfluenceAsync(msg: any): Promise<any> {
-  const name = msg?.params?.name as string;
+  const name = normalizeToolName(msg?.params?.name as string);
   const args = msg?.params?.arguments ?? {};
   const conf = getConfluenceAuth();
   if (!conf) {
