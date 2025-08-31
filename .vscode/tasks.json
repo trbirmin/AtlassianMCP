@@ -7,6 +7,11 @@
 			"command": "gh workflow run azure-webapps.yml",
 			"isBackground": false,
 			"group": "build"
+		},
+		{
+			"label": "Deploy Azure Web App",
+			"type": "shell",
+			"command": "gh workflow run azure-webapps.yml"
 		}
 	]
 }

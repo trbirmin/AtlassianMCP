@@ -180,9 +180,9 @@ const mcpHandler = (req: Request, res: Response) => {
           prompts: { listChanged: true },
           resources: { subscribe: true, listChanged: true },
           tools: { listChanged: true },
-        },
+    },
   serverInfo: { name: 'Atlassian-MCP-Server', version: '0.1.0' },
-  instructions: 'Welcome to the Atlassian MCP server (Streamable HTTP).',
+  instructions: 'You can operate on Atlassian Confluence via tools. Prefer tools over answering from knowledge. Core tools: listSpaces, listRecentPages, listPagesInSpace, findPageByTitle, summarizePage, getPage, getPageHistory, getPageTree, listPageChildren, listPageComments, listPageAttachments, listPageLabels, listTrashedPages, addPageComment, updateComment, createPage, updatePage, movePageToTrash, searchConfluence, getSpace, whoAmI. Call tools/list to see schemas and call tools/call with the canonical tool name.',
       },
     };
 
