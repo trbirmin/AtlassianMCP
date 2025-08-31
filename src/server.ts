@@ -667,7 +667,17 @@ async function handleConfluenceAsync(msg: any): Promise<any> {
       }
       const items = (r.data?.results || []).map((s: any) => ({ key: s.key, name: s.name, id: s.id, url: conf.baseUrl + '/wiki' + (s?._links?.webui || '') }));
       if (!items.length) return { spaces: [], message: 'No spaces found.' };
-      return { spaces: items };
+      const message = items.map((s: any) => `${s.key} — ${s.name}`).join('\n');
+      const card = {
+        type: 'AdaptiveCard',
+        $schema: 'http://adaptivecards.io/schemas/adaptive-card.json',
+        version: '1.5',
+        body: [
+          { type: 'TextBlock', text: 'Confluence spaces', weight: 'Bolder', size: 'Medium', wrap: true },
+          ...items.map((s: any) => ({ type: 'TextBlock', text: `${s.key} — ${s.name}`, wrap: true })),
+        ],
+      };
+      return { spaces: items, message, ui: { adaptiveCard: card } };
     }
     if (name === 'listPagesInSpace') {
       const spaceKey = String(args.spaceKey || '').trim();
