@@ -11,6 +11,10 @@ paths:
   /mcp:
     post:
       summary: Atlassian MCP Server Endpoint
+      description: >
+        Accepts MCP Streamable HTTP JSON-RPC messages (initialize, tools/list, tools/call). 
+        Returns JSON by default and supports Server-Sent Events when requested via 
+        `Accept: text/event-stream`. Includes `Mcp-Session-Id` header on initialize.
       x-ms-agentic-protocol: mcp-streamable-1.0
       operationId: InvokeMCP
       consumes:
@@ -24,6 +28,9 @@ paths:
   /healthz:
     get:
       summary: Health probe
+      description: >
+        Liveness endpoint that returns 'ok' when the service is running; useful 
+        for Azure App Service health checks.
       operationId: Healthz
       produces:
         - text/plain
