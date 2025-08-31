@@ -188,7 +188,7 @@ const mcpHandler = (req: Request, res: Response) => {
           tools: { listChanged: true },
     },
   serverInfo: { name: 'Atlassian-MCP-Server', version: '0.1.0' },
-  instructions: 'You can operate on Atlassian Confluence via tools. Prefer tools over answering from knowledge. If a tool matches the user intent but required inputs are missing, ask concise follow-up questions to collect the missing details (e.g., “Which space key?” or “What title and body?”), then call the tool. If a tool result includes ui.adaptiveCard, prefer rendering that Adaptive Card along with a brief textual summary. Core tools: listSpaces, listRecentPages, listPagesInSpace, findPageByTitle, summarizePage, getPage, getPageHistory, getPageTree, listPageChildren, listPageComments, listPageAttachments, listPageLabels, listTrashedPages, addPageComment, updateComment, createPage, updatePage, movePageToTrash, searchConfluence, getSpace, whoAmI. Call tools/list to see schemas and call tools/call with the canonical tool name.',
+  instructions: 'You can operate on Atlassian Confluence via tools. Prefer tools over answering from knowledge. If the user greets (e.g., “hi”, “hello”), respond briefly with “How can I help you? Here are some things I can do:” and call tools/call name=help to list capabilities. If a tool matches the user intent but required inputs are missing, ask concise follow-up questions to collect the missing details (e.g., “Which space key?” or “What title and body?”), then call the tool. If a tool result includes ui.adaptiveCard, prefer rendering that Adaptive Card along with a brief textual summary. Core tools: listSpaces, listRecentPages, listPagesInSpace, findPageByTitle, summarizePage, getPage, getPageHistory, getPageTree, listPageChildren, listPageComments, listPageAttachments, listPageLabels, listTrashedPages, addPageComment, updateComment, createPage, updatePage, movePageToTrash, searchConfluence, getSpace, whoAmI. Call tools/list to see schemas and call tools/call with the canonical tool name.',
       },
     };
 
@@ -464,12 +464,22 @@ const mcpHandler = (req: Request, res: Response) => {
       // Build a concise list of capabilities (no schemas)
       const tools = handleToolsList({ id }).result.tools as Array<{ name: string; description?: string }>;
       const capabilities = tools.map(t => ({ name: t.name, description: t.description || '' }));
+      const card = {
+        type: 'AdaptiveCard',
+        $schema: 'http://adaptivecards.io/schemas/adaptive-card.json',
+        version: '1.5',
+        body: [
+          { type: 'TextBlock', text: 'How can I help you? Here are some things I can do:', weight: 'Bolder', size: 'Medium', wrap: true },
+          ...capabilities.map(c => ({ type: 'TextBlock', text: `• ${c.name}: ${c.description}`, wrap: true })),
+        ],
+      };
       return {
         jsonrpc: '2.0',
         id,
         result: {
           message: 'Capabilities available via MCP tools:',
           capabilities,
+          ui: { adaptiveCard: card },
         },
       };
     }
