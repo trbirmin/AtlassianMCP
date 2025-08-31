@@ -270,12 +270,14 @@ const mcpHandler = (req: Request, res: Response) => {
             inputSchema: {
               type: 'object',
               properties: {
-                spaceKey: { type: 'string', description: 'Confluence space key' },
+                spaceKey: { type: 'string', description: 'Confluence space key (preferred if known)' },
+                spaceName: { type: 'string', description: 'Alternative to spaceKey: the human-friendly space name (e.g., "My first space")' },
                 title: { type: 'string', description: 'Page title' },
                 body: { type: 'string', description: 'Page body in Confluence storage (HTML) format' },
                 parentId: { type: 'string', description: 'Optional parent page ID' },
               },
-              required: ['spaceKey', 'title', 'body'],
+              // Require title and body; require at least one of spaceKey or spaceName (documented in description)
+              required: ['title', 'body'],
               additionalProperties: false,
             },
           },
@@ -652,7 +654,7 @@ async function handleConfluenceAsync(msg: any): Promise<any> {
         if (r.status === 401 || r.status === 403) return { message: 'Confluence authentication failed. Check credentials.' };
         return { message: `List spaces failed: HTTP ${r.status}` };
       }
-      const items = (r.data?.results || []).map((s: any) => ({ key: s.key, name: s.name, id: s.id, url: conf.baseUrl + 'wiki' + (s?._links?.webui || '') }));
+      const items = (r.data?.results || []).map((s: any) => ({ key: s.key, name: s.name, id: s.id, url: conf.baseUrl + '/wiki' + (s?._links?.webui || '') }));
       if (!items.length) return { spaces: [], message: 'No spaces found.' };
       return { spaces: items };
     }
@@ -663,7 +665,7 @@ async function handleConfluenceAsync(msg: any): Promise<any> {
       const url = `${conf.baseUrl}/wiki/rest/api/content?spaceKey=${encodeURIComponent(spaceKey)}&type=page&limit=${limit}`;
       const r = await safeFetchJson(url, { headers: h() });
       if (!r.ok) return { message: r.status === 404 ? 'Space not found.' : `List pages failed: HTTP ${r.status}` };
-      const pages = (r.data?.results || []).map((p: any) => ({ id: p.id, title: p.title, url: conf.baseUrl + 'wiki' + (p?._links?.webui || '') }));
+      const pages = (r.data?.results || []).map((p: any) => ({ id: p.id, title: p.title, url: conf.baseUrl + '/wiki' + (p?._links?.webui || '') }));
       if (!pages.length) return { pages: [], message: 'No pages found in space.' };
       return { pages };
     }
@@ -684,22 +686,47 @@ async function handleConfluenceAsync(msg: any): Promise<any> {
       const page = gr.data;
       const storage = page?.body?.storage?.value || '';
       const text = htmlToText(storage).slice(0, 8000);
-      const url = conf.baseUrl + 'wiki' + (page?._links?.webui || '');
+      const url = conf.baseUrl + '/wiki' + (page?._links?.webui || '');
       return { id, title: page?.title, url, excerpt: text.slice(0, 1000), content: text };
     }
     if (name === 'createPage') {
-      const spaceKey = String(args.spaceKey || '').trim();
+      const spaceKeyRaw = args.spaceKey ? String(args.spaceKey).trim() : '';
+      const spaceNameRaw = args.spaceName ? String(args.spaceName).trim() : '';
       const title = String(args.title || '').trim();
       const body = String(args.body || '');
       const parentId = args.parentId ? String(args.parentId) : undefined;
-      if (!spaceKey || !title || !body) return { message: 'spaceKey, title, and body are required' };
+      if (!title || !body) return { message: 'title and body are required' };
+
+      let spaceKey = spaceKeyRaw;
+      if (!spaceKey && spaceNameRaw) {
+        // Try to find space by name (case-insensitive) by paging through spaces
+        const findSpaceKeyByName = async (name: string): Promise<string | null> => {
+          const pageSize = 100;
+          for (let start = 0; start < 1000; start += pageSize) {
+            const url = `${conf.baseUrl}/wiki/rest/api/space?limit=${pageSize}&start=${start}`;
+            const r = await safeFetchJson(url, { headers: h() });
+            if (!r.ok) break;
+            const results = r.data?.results || [];
+            const match = results.find((s: any) => String(s?.name || '').trim().toLowerCase() === name.toLowerCase());
+            if (match) return match.key as string;
+            if (!r.data?._links?.next || results.length < pageSize) break;
+          }
+          return null;
+        };
+        const resolved = await findSpaceKeyByName(spaceNameRaw);
+        if (resolved) spaceKey = resolved;
+        else return { message: `Space not found by name: ${spaceNameRaw}. Provide spaceKey instead.` };
+      }
+
+      if (!spaceKey) return { message: 'spaceKey or spaceName is required' };
+
       const postUrl = `${conf.baseUrl}/wiki/rest/api/content`;
       const payload: any = { type: 'page', title, space: { key: spaceKey }, body: { storage: { value: body, representation: 'storage' } } };
       if (parentId) payload.ancestors = [{ id: parentId }];
       const pr = await safeFetchJson(postUrl, { method: 'POST', headers: h({ 'Content-Type': 'application/json' }), body: JSON.stringify(payload) });
       if (!pr.ok) return { message: `Create page failed: HTTP ${pr.status}` };
       const created = pr.data;
-      const url = conf.baseUrl + 'wiki' + (created?._links?.webui || '');
+      const url = conf.baseUrl + '/wiki' + (created?._links?.webui || '');
       return { id: created?.id, title: created?.title, url };
     }
     if (name === 'updatePage') {
@@ -718,7 +745,7 @@ async function handleConfluenceAsync(msg: any): Promise<any> {
       const ur = await safeFetchJson(putUrl, { method: 'PUT', headers: h({ 'Content-Type': 'application/json' }), body: JSON.stringify(payload) });
       if (!ur.ok) return { message: `Update page failed: HTTP ${ur.status}` };
       const updated = ur.data;
-      const url = conf.baseUrl + 'wiki' + (updated?._links?.webui || '');
+      const url = conf.baseUrl + '/wiki' + (updated?._links?.webui || '');
       return { id: updated?.id, title: updated?.title, url };
     }
     if (name === 'movePageToTrash') {
@@ -738,7 +765,7 @@ async function handleConfluenceAsync(msg: any): Promise<any> {
       const page = gr.data;
       const storage = page?.body?.storage?.value || '';
       const text = htmlToText(storage).slice(0, 8000);
-      const url = conf.baseUrl + 'wiki' + (page?._links?.webui || '');
+      const url = conf.baseUrl + '/wiki' + (page?._links?.webui || '');
       return { id: page?.id, title: page?.title, url, content: text };
     }
     if (name === 'listPageChildren') {
@@ -776,7 +803,7 @@ async function handleConfluenceAsync(msg: any): Promise<any> {
         title: a.title,
         mediaType: a?.metadata?.mediaType,
         fileSize: a?.extensions?.fileSize,
-        downloadUrl: conf.baseUrl + 'wiki' + (a?._links?.download || ''),
+        downloadUrl: conf.baseUrl + '/wiki' + (a?._links?.download || ''),
       }));
       if (!attachments.length) return { attachments: [], message: 'No attachments found.' };
       return { attachments };
@@ -825,7 +852,7 @@ async function handleConfluenceAsync(msg: any): Promise<any> {
       const url = `${conf.baseUrl}/wiki/rest/api/search?cql=${encodeURIComponent(cql)}&limit=${limit}`;
       const r = await safeFetchJson(url, { headers: h() });
       if (!r.ok) return { message: `Search failed: HTTP ${r.status}` };
-      const results = (r.data?.results || []).map((x: any) => ({ id: x?.content?.id || x?.id, title: x?.title || x?.content?.title, url: conf.baseUrl + 'wiki' + (x?._links?.webui || ''), type: x?.content?._expandable?.type || x?.content?.type }));
+      const results = (r.data?.results || []).map((x: any) => ({ id: x?.content?.id || x?.id, title: x?.title || x?.content?.title, url: conf.baseUrl + '/wiki' + (x?._links?.webui || ''), type: x?.content?._expandable?.type || x?.content?.type }));
       if (!results.length) return { results: [], message: 'No search results found.' };
       return { results };
     }
@@ -836,7 +863,7 @@ async function handleConfluenceAsync(msg: any): Promise<any> {
       const r = await safeFetchJson(url, { headers: h() });
       if (!r.ok) return { message: r.status === 404 ? 'Space not found.' : `Get space failed: HTTP ${r.status}` };
       const space = r.data;
-      const urlOut = conf.baseUrl + 'wiki' + (space?._links?.webui || '');
+      const urlOut = conf.baseUrl + '/wiki' + (space?._links?.webui || '');
       return { key: space?.key, name: space?.name, url: urlOut, id: space?.id };
     }
     if (name === 'whoAmI') {
@@ -853,7 +880,7 @@ async function handleConfluenceAsync(msg: any): Promise<any> {
       const url = `${conf.baseUrl}/wiki/rest/api/search?cql=${encodeURIComponent(cql)}&limit=${limit}`;
       const r = await safeFetchJson(url, { headers: h() });
       if (!r.ok) return { message: `List recent pages failed: HTTP ${r.status}` };
-      const results = (r.data?.results || []).map((x: any) => ({ id: x?.content?.id || x?.id, title: x?.title || x?.content?.title, url: conf.baseUrl + 'wiki' + (x?._links?.webui || ''), lastModified: x?.lastModified || x?._links?.lastModified }));
+      const results = (r.data?.results || []).map((x: any) => ({ id: x?.content?.id || x?.id, title: x?.title || x?.content?.title, url: conf.baseUrl + '/wiki' + (x?._links?.webui || ''), lastModified: x?.lastModified || x?._links?.lastModified }));
       if (!results.length) return { pages: [], message: 'No recent pages found.' };
       return { pages: results };
     }
@@ -875,7 +902,7 @@ async function handleConfluenceAsync(msg: any): Promise<any> {
       const url = spaceKey ? `${base}&spaceKey=${encodeURIComponent(spaceKey)}` : base;
       const r = await safeFetchJson(url, { headers: h() });
       if (!r.ok) return { message: `List trashed pages failed: HTTP ${r.status}` };
-      const pages = (r.data?.results || []).map((p: any) => ({ id: p.id, title: p.title, url: conf.baseUrl + 'wiki' + (p?._links?.webui || '') }));
+      const pages = (r.data?.results || []).map((p: any) => ({ id: p.id, title: p.title, url: conf.baseUrl + '/wiki' + (p?._links?.webui || '') }));
       if (!pages.length) return { pages: [], message: 'Trash is empty.' };
       return { pages };
     }
@@ -889,7 +916,7 @@ async function handleConfluenceAsync(msg: any): Promise<any> {
       if (!r.ok) return { message: `Find page by title failed: HTTP ${r.status}` };
       const match = (r.data?.results || []).find((p: any) => String(p?.title).trim().toLowerCase() === title.toLowerCase());
       if (!match) return { message: 'No page found with that title.' };
-      const out = { id: match.id, title: match.title, url: conf.baseUrl + 'wiki' + (match?._links?.webui || '') };
+      const out = { id: match.id, title: match.title, url: conf.baseUrl + '/wiki' + (match?._links?.webui || '') };
       return out;
     }
     if (name === 'getPageTree') {
@@ -909,7 +936,7 @@ async function handleConfluenceAsync(msg: any): Promise<any> {
         const items = r.data?.results || [];
         const results: any[] = [];
         for (const ch of items) {
-          const node: any = { id: ch.id, title: ch.title, url: conf.baseUrl + 'wiki' + (ch?._links?.webui || '') };
+          const node: any = { id: ch.id, title: ch.title, url: conf.baseUrl + '/wiki' + (ch?._links?.webui || '') };
           node.children = await fetchChildren(ch.id, d - 1);
           results.push(node);
         }
@@ -918,7 +945,7 @@ async function handleConfluenceAsync(msg: any): Promise<any> {
       const tree = {
         id: root?.id,
         title: root?.title,
-        url: conf.baseUrl + 'wiki' + (root?._links?.webui || ''),
+        url: conf.baseUrl + '/wiki' + (root?._links?.webui || ''),
         children: await fetchChildren(rootId, depth - 1),
       };
       return tree;
@@ -935,5 +962,10 @@ function toErr(e: any) {
 
 function htmlToText(html: string) {
   // naive strip tags; adequate for summaries
-  return String(html).replace(/<\s*br\s*\/?\s*>/gi, '\n').replace(/<\s*\/p\s*>/gi, '\n').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&');
+  return String(html)
+    .replace(/<\s*br\s*\/?\s*>/gi, '\n')
+    .replace(/<\s*\/p\s*>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&');
 }
