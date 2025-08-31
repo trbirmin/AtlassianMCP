@@ -12,6 +12,17 @@
 			"label": "Deploy Azure Web App",
 			"type": "shell",
 			"command": "gh workflow run azure-webapps.yml"
+		},
+		{
+			"label": "Deploy Azure Web App",
+			"type": "shell",
+			"command": "gh",
+			"args": [
+				"workflow",
+				"run",
+				"azure-webapps.yml"
+			],
+			"isBackground": false
 		}
 	]
 }

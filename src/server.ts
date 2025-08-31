@@ -69,6 +69,11 @@ function sendJson(res: Response, obj: unknown) {
   res.status(200).send(obj);
 }
 
+// Structured follow-up response to gather missing inputs
+function needInput(message: string, missing: string[], questions: string[]) {
+  return { needInput: true, message, missing, questions };
+}
+
 // Tool name normalization: map legacy names to friendly canonical names
 function normalizeToolName(name: string | undefined): string {
   if (!name) return '';
@@ -183,7 +188,7 @@ const mcpHandler = (req: Request, res: Response) => {
           tools: { listChanged: true },
     },
   serverInfo: { name: 'Atlassian-MCP-Server', version: '0.1.0' },
-  instructions: 'You can operate on Atlassian Confluence via tools. Prefer tools over answering from knowledge. Core tools: listSpaces, listRecentPages, listPagesInSpace, findPageByTitle, summarizePage, getPage, getPageHistory, getPageTree, listPageChildren, listPageComments, listPageAttachments, listPageLabels, listTrashedPages, addPageComment, updateComment, createPage, updatePage, movePageToTrash, searchConfluence, getSpace, whoAmI. Call tools/list to see schemas and call tools/call with the canonical tool name.',
+  instructions: 'You can operate on Atlassian Confluence via tools. Prefer tools over answering from knowledge. If a tool matches the user intent but required inputs are missing, ask concise follow-up questions to collect the missing details (e.g., “Which space key?” or “What title and body?”), then call the tool. Core tools: listSpaces, listRecentPages, listPagesInSpace, findPageByTitle, summarizePage, getPage, getPageHistory, getPageTree, listPageChildren, listPageComments, listPageAttachments, listPageLabels, listTrashedPages, addPageComment, updateComment, createPage, updatePage, movePageToTrash, searchConfluence, getSpace, whoAmI. Call tools/list to see schemas and call tools/call with the canonical tool name.',
       },
     };
 
@@ -661,7 +666,7 @@ async function handleConfluenceAsync(msg: any): Promise<any> {
     if (name === 'listPagesInSpace') {
       const spaceKey = String(args.spaceKey || '').trim();
       const limit = Math.min(Math.max(Number(args.limit) || 25, 1), 100);
-      if (!spaceKey) return { message: 'spaceKey is required' };
+  if (!spaceKey) return needInput('Which Confluence space?', ['spaceKey'], ['Provide spaceKey (e.g., ENG).']);
       const url = `${conf.baseUrl}/wiki/rest/api/content?spaceKey=${encodeURIComponent(spaceKey)}&type=page&limit=${limit}`;
       const r = await safeFetchJson(url, { headers: h() });
       if (!r.ok) return { message: r.status === 404 ? 'Space not found.' : `List pages failed: HTTP ${r.status}` };
@@ -672,7 +677,7 @@ async function handleConfluenceAsync(msg: any): Promise<any> {
     if (name === 'summarizePage') {
       const query = String(args.query || '').trim();
       const spaceKey = args.spaceKey ? String(args.spaceKey) : undefined;
-      if (!query) return { message: 'query is required' };
+  if (!query) return needInput('What page title or query should I search for?', ['query'], ['Provide a title keyword or phrase. Optionally add spaceKey.']);
       const cql = `type=page AND title ~ "${query.replace(/"/g, '\\"')}"` + (spaceKey ? ` AND space=${spaceKey}` : '');
       const searchUrl = `${conf.baseUrl}/wiki/rest/api/search?cql=${encodeURIComponent(cql)}&limit=1`;
       const sr = await safeFetchJson(searchUrl, { headers: h() });
@@ -695,7 +700,12 @@ async function handleConfluenceAsync(msg: any): Promise<any> {
       const title = String(args.title || '').trim();
       const body = String(args.body || '');
       const parentId = args.parentId ? String(args.parentId) : undefined;
-      if (!title || !body) return { message: 'title and body are required' };
+      if (!title || !body) {
+        const missing: string[] = [];
+        if (!title) missing.push('title');
+        if (!body) missing.push('body');
+        return needInput('I can create the page—what title and body should I use?', missing, ['Provide a title.', 'Provide a body in HTML storage format (e.g., <p>…</p>).']);
+      }
 
       let spaceKey = spaceKeyRaw;
       if (!spaceKey && spaceNameRaw) {
@@ -718,7 +728,7 @@ async function handleConfluenceAsync(msg: any): Promise<any> {
         else return { message: `Space not found by name: ${spaceNameRaw}. Provide spaceKey instead.` };
       }
 
-      if (!spaceKey) return { message: 'spaceKey or spaceName is required' };
+  if (!spaceKey) return needInput('Which space should I use?', ['spaceKey','spaceName'], ['Provide spaceKey (e.g., ENG).', 'Or provide the exact spaceName.']);
 
       const postUrl = `${conf.baseUrl}/wiki/rest/api/content`;
       const payload: any = { type: 'page', title, space: { key: spaceKey }, body: { storage: { value: body, representation: 'storage' } } };
@@ -734,7 +744,7 @@ async function handleConfluenceAsync(msg: any): Promise<any> {
       const newTitle = args.title ? String(args.title) : undefined;
       const newBody = args.body ? String(args.body) : undefined;
       const minorEdit = !!args.minorEdit;
-      if (!pageId) return { message: 'id is required' };
+  if (!pageId) return needInput('Which page do you want to update?', ['id'], ['Provide the page ID.']);
       const getUrl = `${conf.baseUrl}/wiki/rest/api/content/${pageId}?expand=body.storage,version`;
       const gr = await safeFetchJson(getUrl, { headers: h() });
       if (!gr.ok) return { message: gr.status === 404 ? 'Page not found.' : `Get page failed: HTTP ${gr.status}` };
@@ -750,7 +760,7 @@ async function handleConfluenceAsync(msg: any): Promise<any> {
     }
     if (name === 'movePageToTrash') {
       const pageId = String(args.id || '').trim();
-      if (!pageId) return { message: 'id is required' };
+  if (!pageId) return needInput('Which page do you want to move to trash?', ['id'], ['Provide the page ID.']);
       const delUrl = `${conf.baseUrl}/wiki/rest/api/content/${pageId}`;
       const dr = await safeFetchJson(delUrl, { method: 'DELETE', headers: h() });
       if (!dr.ok) return { message: dr.status === 404 ? 'Page not found.' : dr.status === 403 || dr.status === 401 ? 'Not authorized to trash page.' : `Trash page failed: HTTP ${dr.status}` };
@@ -758,7 +768,7 @@ async function handleConfluenceAsync(msg: any): Promise<any> {
     }
     if (name === 'getPage') {
       const pageId = String(args.id || '').trim();
-      if (!pageId) return { message: 'id is required' };
+  if (!pageId) return needInput('Which page do you want to fetch?', ['id'], ['Provide the page ID.']);
       const getUrl = `${conf.baseUrl}/wiki/rest/api/content/${pageId}?expand=body.storage,version,space`;
       const gr = await safeFetchJson(getUrl, { headers: h() });
       if (!gr.ok) return { message: gr.status === 404 ? 'Page not found.' : `Get page failed: HTTP ${gr.status}` };
@@ -772,7 +782,7 @@ async function handleConfluenceAsync(msg: any): Promise<any> {
       const pageId = String(args.id || '').trim();
       const type = (String(args.type || 'page') as 'page' | 'comment' | 'attachment');
       const limit = Math.min(Math.max(Number(args.limit) || 25, 1), 100);
-      if (!pageId) return { message: 'id is required' };
+  if (!pageId) return needInput('Which page are the children for?', ['id'], ['Provide the parent page ID.']);
       const url = `${conf.baseUrl}/wiki/rest/api/content/${pageId}/child/${type}?expand=body.storage&limit=${limit}`;
       const r = await safeFetchJson(url, { headers: h() });
       if (!r.ok) return { message: r.status === 404 ? 'Page not found.' : `List children failed: HTTP ${r.status}` };
@@ -783,7 +793,7 @@ async function handleConfluenceAsync(msg: any): Promise<any> {
     if (name === 'listPageComments') {
       const pageId = String(args.id || '').trim();
       const limit = Math.min(Math.max(Number(args.limit) || 25, 1), 100);
-      if (!pageId) return { message: 'id is required' };
+  if (!pageId) return needInput('Which page are the comments for?', ['id'], ['Provide the page ID.']);
       const url = `${conf.baseUrl}/wiki/rest/api/content/${pageId}/child/comment?expand=body.storage,version&limit=${limit}`;
       const r = await safeFetchJson(url, { headers: h() });
       if (!r.ok) return { message: r.status === 404 ? 'Page not found.' : `List comments failed: HTTP ${r.status}` };
@@ -794,7 +804,7 @@ async function handleConfluenceAsync(msg: any): Promise<any> {
     if (name === 'listPageAttachments') {
       const pageId = String(args.id || '').trim();
       const limit = Math.min(Math.max(Number(args.limit) || 25, 1), 100);
-      if (!pageId) return { message: 'id is required' };
+  if (!pageId) return needInput('Which page are the attachments for?', ['id'], ['Provide the page ID.']);
       const url = `${conf.baseUrl}/wiki/rest/api/content/${pageId}/child/attachment?limit=${limit}`;
       const r = await safeFetchJson(url, { headers: h() });
       if (!r.ok) return { message: r.status === 404 ? 'Page not found.' : `List attachments failed: HTTP ${r.status}` };
@@ -811,7 +821,7 @@ async function handleConfluenceAsync(msg: any): Promise<any> {
     if (name === 'listPageLabels') {
       const pageId = String(args.id || '').trim();
       const limit = Math.min(Math.max(Number(args.limit) || 25, 1), 100);
-      if (!pageId) return { message: 'id is required' };
+  if (!pageId) return needInput('Which page are the labels for?', ['id'], ['Provide the page ID.']);
       const url = `${conf.baseUrl}/wiki/rest/api/content/${pageId}/label?limit=${limit}`;
       const r = await safeFetchJson(url, { headers: h() });
       if (!r.ok) return { message: r.status === 404 ? 'Page not found.' : `Get labels failed: HTTP ${r.status}` };
@@ -822,7 +832,12 @@ async function handleConfluenceAsync(msg: any): Promise<any> {
     if (name === 'addPageComment') {
       const pageId = String(args.id || '').trim();
       const body = String(args.body || '');
-      if (!pageId || !body) return { message: 'id and body are required' };
+      if (!pageId || !body) {
+        const missing: string[] = [];
+        if (!pageId) missing.push('id');
+        if (!body) missing.push('body');
+        return needInput('I can add a comment—what page and what text?', missing, ['Provide the page ID.', 'Provide the comment body (HTML storage).']);
+      }
       const postUrl = `${conf.baseUrl}/wiki/rest/api/content`;
       const payload = { type: 'comment', container: { id: pageId, type: 'page' }, body: { storage: { value: body, representation: 'storage' } } } as any;
       const pr = await safeFetchJson(postUrl, { method: 'POST', headers: h({ 'Content-Type': 'application/json' }), body: JSON.stringify(payload) });
@@ -833,7 +848,12 @@ async function handleConfluenceAsync(msg: any): Promise<any> {
     if (name === 'updateComment') {
       const commentId = String(args.id || '').trim();
       const body = String(args.body || '');
-      if (!commentId || !body) return { message: 'id and body are required' };
+      if (!commentId || !body) {
+        const missing: string[] = [];
+        if (!commentId) missing.push('id');
+        if (!body) missing.push('body');
+        return needInput('I can update the comment—what comment and what new text?', missing, ['Provide the comment ID.', 'Provide the new body (HTML storage).']);
+      }
       const getUrl = `${conf.baseUrl}/wiki/rest/api/content/${commentId}?expand=version`;
       const gr = await safeFetchJson(getUrl, { headers: h() });
       if (!gr.ok) return { message: gr.status === 404 ? 'Comment not found.' : `Get comment failed: HTTP ${gr.status}` };
@@ -848,7 +868,7 @@ async function handleConfluenceAsync(msg: any): Promise<any> {
     if (name === 'searchConfluence') {
       const cql = String(args.cql || '').trim();
       const limit = Math.min(Math.max(Number(args.limit) || 10, 1), 100);
-      if (!cql) return { message: 'cql is required' };
+  if (!cql) return needInput('What do you want to search for?', ['cql'], ['Provide a CQL string (e.g., text ~ "foo" AND type=page).']);
       const url = `${conf.baseUrl}/wiki/rest/api/search?cql=${encodeURIComponent(cql)}&limit=${limit}`;
       const r = await safeFetchJson(url, { headers: h() });
       if (!r.ok) return { message: `Search failed: HTTP ${r.status}` };
@@ -858,7 +878,7 @@ async function handleConfluenceAsync(msg: any): Promise<any> {
     }
     if (name === 'getSpace') {
       const key = String(args.key || '').trim();
-      if (!key) return { message: 'key is required' };
+  if (!key) return needInput('Which space details do you need?', ['key'], ['Provide the space key (e.g., ENG).']);
       const url = `${conf.baseUrl}/wiki/rest/api/space/${encodeURIComponent(key)}`;
       const r = await safeFetchJson(url, { headers: h() });
       if (!r.ok) return { message: r.status === 404 ? 'Space not found.' : `Get space failed: HTTP ${r.status}` };
@@ -887,7 +907,7 @@ async function handleConfluenceAsync(msg: any): Promise<any> {
     if (name === 'getPageHistory') {
       const pageId = String(args.id || '').trim();
       const limit = Math.min(Math.max(Number(args.limit) || 10, 1), 100);
-      if (!pageId) return { message: 'id is required' };
+  if (!pageId) return needInput('Which page history do you want?', ['id'], ['Provide the page ID.']);
       const url = `${conf.baseUrl}/wiki/rest/api/content/${pageId}/version?limit=${limit}`;
       const r = await safeFetchJson(url, { headers: h() });
       if (!r.ok) return { message: r.status === 404 ? 'Page not found.' : `Get page history failed: HTTP ${r.status}` };
@@ -909,7 +929,7 @@ async function handleConfluenceAsync(msg: any): Promise<any> {
     if (name === 'findPageByTitle') {
       const title = String(args.title || '').trim();
       const spaceKey = args.spaceKey ? String(args.spaceKey).trim() : '';
-      if (!title) return { message: 'title is required' };
+  if (!title) return needInput('What is the exact page title?', ['title'], ['Provide the exact page title. Optionally add spaceKey.']);
       let url = `${conf.baseUrl}/wiki/rest/api/content?type=page&title=${encodeURIComponent(title)}&limit=10`;
       if (spaceKey) url += `&spaceKey=${encodeURIComponent(spaceKey)}`;
       const r = await safeFetchJson(url, { headers: h() });
@@ -922,7 +942,7 @@ async function handleConfluenceAsync(msg: any): Promise<any> {
     if (name === 'getPageTree') {
       const rootId = String(args.id || '').trim();
       const depth = Math.min(Math.max(Number(args.depth) || 2, 1), 4);
-      if (!rootId) return { message: 'id is required' };
+  if (!rootId) return needInput('Which page should be the root of the tree?', ['id'], ['Provide the root page ID.']);
       // fetch root page basic info
       const rootUrl = `${conf.baseUrl}/wiki/rest/api/content/${rootId}`;
       const rr = await safeFetchJson(rootUrl, { headers: h() });
