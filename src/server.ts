@@ -190,7 +190,7 @@ const mcpHandler = (req: Request, res: Response) => {
           tools: { listChanged: true },
     },
   serverInfo: { name: 'Atlassian-MCP-Server', version: '0.1.0' },
-  instructions: 'You can operate on Atlassian Confluence via tools. Prefer tools over answering from knowledge. If the user greets (e.g., “hi”, “hello”), respond briefly with “How can I help you? Here are some things I can do:” and call tools/call name=help to list capabilities. If a tool matches the user intent but required inputs are missing, ask concise follow-up questions to collect the missing details (e.g., “Which space key?” or “What title and body?”), then call the tool. Do not assume a default space—ask the user to choose (you may list keys via listSpaces). When a user asks to create a page, use createPage (not createSpace). Only use createSpace when the user explicitly asks to create a new Confluence space and after confirming intent. If a tool result includes ui.adaptiveCard, prefer rendering that Adaptive Card along with a brief textual summary. Core tools: listSpaces, listRecentPages, listPagesInSpace, findPageByTitle, summarizePage, getPage, getPageHistory, getPageTree, listPageChildren, listPageComments, listPageAttachments, listPageLabels, listTrashedPages, addPageComment, updateComment, createPage, updatePage, movePageToTrash, searchConfluence, getSpace, whoAmI. Call tools/list to see schemas and call tools/call with the canonical tool name.',
+  instructions: 'You can operate on Atlassian Confluence via tools. Prefer tools over answering from knowledge. If the user greets (e.g., “hi”, “hello”), respond briefly with “How can I help you? Here are some things I can do:” and call tools/call name=help to list capabilities. If a tool matches the user intent but required inputs are missing, ask concise follow-up questions to collect the missing details (e.g., “Which space key?”, “What title?”, “What body?”), then call the tool. Do not assume a default space—ask the user to choose (you may list keys via listSpaces). For requests like “create a page”, ask for exactly these three: space (spaceKey or exact spaceName), title, and body; do not decide to update an existing page or pick a space on the user’s behalf. Do not claim you created or updated anything until the tool succeeds. Use createPage for page creation (not createSpace). Use createSpace only if the user explicitly asks to create a new Confluence space and after confirming intent. If a tool result includes ui.adaptiveCard, prefer rendering that Adaptive Card along with a brief textual summary. Core tools: listSpaces, listRecentPages, listPagesInSpace, findPageByTitle, summarizePage, getPage, getPageHistory, getPageTree, listPageChildren, listPageComments, listPageAttachments, listPageLabels, listTrashedPages, addPageComment, updateComment, createPage, updatePage, movePageToTrash, searchConfluence, getSpace, whoAmI. Call tools/list to see schemas and call tools/call with the canonical tool name.',
       },
     };
 
@@ -269,7 +269,7 @@ const mcpHandler = (req: Request, res: Response) => {
       },
       {
         name: 'createPage',
-        description: 'Create a Confluence page (not a space) in a chosen space',
+            description: 'Create a Confluence page (not a space) in a chosen space. Ask for space (spaceKey or exact spaceName), title, and body if missing; do not assume defaults.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -289,7 +289,7 @@ const mcpHandler = (req: Request, res: Response) => {
       },
       {
         name: 'updatePage',
-        description: 'Update a Confluence page (title and/or body)',
+            description: 'Update a Confluence page (title and/or body). Only use when the user explicitly asks to update an existing page.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -298,7 +298,11 @@ const mcpHandler = (req: Request, res: Response) => {
             body: { type: 'string', description: 'New body in storage (HTML) format (optional)' },
             minorEdit: { type: 'boolean', description: 'Mark as minor edit' },
           },
-          required: ['id'],
+              anyOf: [
+                { required: ['id', 'title'] },
+                { required: ['id', 'body'] },
+              ],
+              required: ['id'],
           additionalProperties: false,
         },
       },
