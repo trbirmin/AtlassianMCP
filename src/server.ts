@@ -199,281 +199,279 @@ const mcpHandler = (req: Request, res: Response) => {
 
   const handleToolsList = (msg: any) => {
     const id = msg.id;
-    const result = {
-      jsonrpc: '2.0',
-      id,
-      result: {
-        tools: [
-          {
-            name: 'help',
-            description: 'List everything that can be done (all available tools and schemas)',
-            inputSchema: { type: 'object', properties: {}, additionalProperties: false },
-          },
-          {
-            name: 'listSpaces',
-            description: 'List Confluence spaces you can access',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                limit: { type: 'number', description: 'Max spaces to return (default 20, max 100)' },
-              },
-              additionalProperties: false,
-            },
-          },
-          {
-            name: 'createSpace',
-            description: 'Admin-only: create a Confluence space. Use ONLY when the user explicitly asks to create a new space. Do NOT use for creating pages.',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                key: { type: 'string', description: 'Space key (2-255 chars, letters/digits)' },
-                name: { type: 'string', description: 'Space name' },
-                description: { type: 'string', description: 'Optional plain-text description' },
-                type: { type: 'string', description: 'global (default) | personal' },
-                confirm: { type: 'boolean', description: 'Must be true to proceed (safety confirmation).' },
-              },
-              required: ['key', 'name', 'confirm'],
-              additionalProperties: false,
-            },
-          },
-          {
-            name: 'listRecentPages',
-            description: 'List recently updated pages (optionally scoped to a space)',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                spaceKey: { type: 'string', description: 'Optional Confluence space key' },
-                limit: { type: 'number', description: 'Max pages (default 10, max 100)' },
-              },
-              additionalProperties: false,
-            },
-          },
-          {
-            name: 'listPagesInSpace',
-            description: 'List pages within a Confluence space',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                spaceKey: { type: 'string', description: 'Confluence space key' },
-                limit: { type: 'number', description: 'Max pages to return (default 25, max 100)' },
-              },
-              required: ['spaceKey'],
-              additionalProperties: false,
-            },
-          },
-          {
-            name: 'summarizePage',
-            description: 'Find a page by title query and return content for summarization',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                query: { type: 'string', description: 'Title or query to search for' },
-                spaceKey: { type: 'string', description: 'Optional space key to scope the search' },
-              },
-              required: ['query'],
-              additionalProperties: false,
-            },
-          },
-          {
-            name: 'findPageByTitle',
-            description: 'Find a page by exact title (optionally within a space)',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                title: { type: 'string', description: 'Exact page title' },
-                spaceKey: { type: 'string', description: 'Optional space key' },
-              },
-              required: ['title'],
-              additionalProperties: false,
-            },
-          },
-          {
-            name: 'createPage',
-            description: 'Create a Confluence page (not a space) in a chosen space',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                spaceKey: { type: 'string', description: 'Confluence space key (preferred if known)' },
-                spaceName: { type: 'string', description: 'Alternative to spaceKey: the human-friendly space name (e.g., "My first space")' },
-                title: { type: 'string', description: 'Page title' },
-                body: { type: 'string', description: 'Page body; plain text is auto-wrapped to storage HTML' },
-                parentId: { type: 'string', description: 'Optional parent page ID' },
-              },
-              anyOf: [
-                { required: ['spaceKey', 'title', 'body'] },
-                { required: ['spaceName', 'title', 'body'] },
-              ],
-              // Require title and body; require at least one of spaceKey or spaceName (documented in description)
-              required: ['title', 'body'],
-              additionalProperties: false,
-            },
-          },
-          {
-            name: 'updatePage',
-            description: 'Update a Confluence page (title and/or body)',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                id: { type: 'string', description: 'Page ID' },
-                title: { type: 'string', description: 'New title (optional)' },
-                body: { type: 'string', description: 'New body in storage (HTML) format (optional)' },
-                minorEdit: { type: 'boolean', description: 'Mark as minor edit' },
-              },
-              required: ['id'],
-              additionalProperties: false,
-            },
-          },
-          {
-            name: 'movePageToTrash',
-            description: 'Move a page to trash (soft delete)',
-            inputSchema: {
-              type: 'object',
-              properties: { id: { type: 'string', description: 'Page ID' } },
-              required: ['id'],
-              additionalProperties: false,
-            },
-          },
-          {
-            name: 'listTrashedPages',
-            description: 'List trashed pages (optionally scoped to a space)',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                spaceKey: { type: 'string', description: 'Optional Confluence space key' },
-                limit: { type: 'number', description: 'Max pages (default 10, max 100)' },
-              },
-              additionalProperties: false,
-            },
-          },
-          {
-            name: 'getPage',
-            description: 'Get a page by ID with content',
-            inputSchema: {
-              type: 'object',
-              properties: { id: { type: 'string', description: 'Page ID' } },
-              required: ['id'],
-              additionalProperties: false,
-            },
-          },
-          {
-            name: 'listPageChildren',
-            description: 'List children of a page (pages, comments, attachments)',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                id: { type: 'string', description: 'Parent page ID' },
-                type: { type: 'string', description: 'child type: page|comment|attachment (default page)' },
-                limit: { type: 'number', description: 'Max items (default 25, max 100)' },
-              },
-              required: ['id'],
-              additionalProperties: false,
-            },
-          },
-          {
-            name: 'getPageHistory',
-            description: 'List version history metadata for a page',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                id: { type: 'string', description: 'Page ID' },
-                limit: { type: 'number', description: 'Max versions (default 10, max 100)' },
-              },
-              required: ['id'],
-              additionalProperties: false,
-            },
-          },
-          {
-            name: 'listPageComments',
-            description: 'List comments on a page',
-            inputSchema: {
-              type: 'object',
-              properties: { id: { type: 'string', description: 'Page ID' }, limit: { type: 'number' } },
-              required: ['id'],
-              additionalProperties: false,
-            },
-          },
-          {
-            name: 'listPageLabels',
-            description: 'List labels on a page',
-            inputSchema: {
-              type: 'object',
-              properties: { id: { type: 'string', description: 'Page ID' }, limit: { type: 'number', description: 'Max labels (default 25, max 100)' } },
-              required: ['id'],
-              additionalProperties: false,
-            },
-          },
-          {
-            name: 'addPageComment',
-            description: 'Create a comment on a page',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                id: { type: 'string', description: 'Page ID (preferred if known)' },
-                pageTitle: { type: 'string', description: 'Alternative: exact page title to comment on' },
-                spaceKey: { type: 'string', description: 'Optional space key to narrow title lookup' },
-                spaceName: { type: 'string', description: 'Optional space name to narrow title lookup' },
-                body: { type: 'string', description: 'Comment body; plain text is auto-wrapped to storage HTML' },
-              },
-              required: ['body'],
-              additionalProperties: false,
-            },
-          },
-          {
-            name: 'listPageAttachments',
-            description: 'List attachments on a page',
-            inputSchema: {
-              type: 'object',
-              properties: { id: { type: 'string', description: 'Page ID' }, limit: { type: 'number', description: 'Max attachments (default 25, max 100)' } },
-              required: ['id'],
-              additionalProperties: false,
-            },
-          },
-          {
-            name: 'getPageTree',
-            description: 'Return a simple children tree for a page up to a given depth',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                id: { type: 'string', description: 'Root page ID' },
-                depth: { type: 'number', description: 'Depth (default 2, max 4)' },
-              },
-              required: ['id'],
-              additionalProperties: false,
-            },
-          },
-          {
-            name: 'updateComment',
-            description: 'Update a comment',
-            inputSchema: {
-              type: 'object',
-              properties: { id: { type: 'string', description: 'Comment ID' }, body: { type: 'string', description: 'New body in storage (HTML)' } },
-              required: ['id', 'body'],
-              additionalProperties: false,
-            },
-          },
-          {
-            name: 'searchConfluence',
-            description: 'Search Confluence using CQL',
-            inputSchema: {
-              type: 'object',
-              properties: { cql: { type: 'string', description: 'Confluence Query Language string' }, limit: { type: 'number' } },
-              required: ['cql'],
-              additionalProperties: false,
-            },
-          },
-          {
-            name: 'getSpace',
-            description: 'Get space details by key',
-            inputSchema: { type: 'object', properties: { key: { type: 'string' } }, required: ['key'], additionalProperties: false },
-          },
-          {
-            name: 'whoAmI',
-            description: 'Get current Confluence user profile',
-            inputSchema: { type: 'object', properties: {}, additionalProperties: false },
-          },
-        ],
+    const tools: any[] = [
+      {
+        name: 'help',
+        description: 'List everything that can be done (all available tools and schemas)',
+        inputSchema: { type: 'object', properties: {}, additionalProperties: false },
       },
-    };
+      {
+        name: 'listSpaces',
+        description: 'List Confluence spaces you can access',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            limit: { type: 'number', description: 'Max spaces to return (default 20, max 100)' },
+          },
+          additionalProperties: false,
+        },
+      },
+      {
+        name: 'listRecentPages',
+        description: 'List recently updated pages (optionally scoped to a space)',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            spaceKey: { type: 'string', description: 'Optional Confluence space key' },
+            limit: { type: 'number', description: 'Max pages (default 10, max 100)' },
+          },
+          additionalProperties: false,
+        },
+      },
+      {
+        name: 'listPagesInSpace',
+        description: 'List pages within a Confluence space',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            spaceKey: { type: 'string', description: 'Confluence space key' },
+            limit: { type: 'number', description: 'Max pages to return (default 25, max 100)' },
+          },
+          required: ['spaceKey'],
+          additionalProperties: false,
+        },
+      },
+      {
+        name: 'summarizePage',
+        description: 'Find a page by title query and return content for summarization',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            query: { type: 'string', description: 'Title or query to search for' },
+            spaceKey: { type: 'string', description: 'Optional space key to scope the search' },
+          },
+          required: ['query'],
+          additionalProperties: false,
+        },
+      },
+      {
+        name: 'findPageByTitle',
+        description: 'Find a page by exact title (optionally within a space)',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            title: { type: 'string', description: 'Exact page title' },
+            spaceKey: { type: 'string', description: 'Optional space key' },
+          },
+          required: ['title'],
+          additionalProperties: false,
+        },
+      },
+      {
+        name: 'createPage',
+        description: 'Create a Confluence page (not a space) in a chosen space',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            spaceKey: { type: 'string', description: 'Confluence space key (preferred if known)' },
+            spaceName: { type: 'string', description: 'Alternative to spaceKey: the human-friendly space name (e.g., "My first space")' },
+            title: { type: 'string', description: 'Page title' },
+            body: { type: 'string', description: 'Page body; plain text is auto-wrapped to storage HTML' },
+            parentId: { type: 'string', description: 'Optional parent page ID' },
+          },
+          anyOf: [
+            { required: ['spaceKey', 'title', 'body'] },
+            { required: ['spaceName', 'title', 'body'] },
+          ],
+          required: ['title', 'body'],
+          additionalProperties: false,
+        },
+      },
+      {
+        name: 'updatePage',
+        description: 'Update a Confluence page (title and/or body)',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', description: 'Page ID' },
+            title: { type: 'string', description: 'New title (optional)' },
+            body: { type: 'string', description: 'New body in storage (HTML) format (optional)' },
+            minorEdit: { type: 'boolean', description: 'Mark as minor edit' },
+          },
+          required: ['id'],
+          additionalProperties: false,
+        },
+      },
+      {
+        name: 'movePageToTrash',
+        description: 'Move a page to trash (soft delete)',
+        inputSchema: {
+          type: 'object',
+          properties: { id: { type: 'string', description: 'Page ID' } },
+          required: ['id'],
+          additionalProperties: false,
+        },
+      },
+      {
+        name: 'listTrashedPages',
+        description: 'List trashed pages (optionally scoped to a space)',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            spaceKey: { type: 'string', description: 'Optional Confluence space key' },
+            limit: { type: 'number', description: 'Max pages (default 10, max 100)' },
+          },
+          additionalProperties: false,
+        },
+      },
+      {
+        name: 'getPage',
+        description: 'Get a page by ID with content',
+        inputSchema: {
+          type: 'object',
+          properties: { id: { type: 'string', description: 'Page ID' } },
+          required: ['id'],
+          additionalProperties: false,
+        },
+      },
+      {
+        name: 'listPageChildren',
+        description: 'List children of a page (pages, comments, attachments)',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', description: 'Parent page ID' },
+            type: { type: 'string', description: 'child type: page|comment|attachment (default page)' },
+            limit: { type: 'number', description: 'Max items (default 25, max 100)' },
+          },
+          required: ['id'],
+          additionalProperties: false,
+        },
+      },
+      {
+        name: 'getPageHistory',
+        description: 'List version history metadata for a page',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', description: 'Page ID' },
+            limit: { type: 'number', description: 'Max versions (default 10, max 100)' },
+          },
+          required: ['id'],
+          additionalProperties: false,
+        },
+      },
+      {
+        name: 'listPageComments',
+        description: 'List comments on a page',
+        inputSchema: {
+          type: 'object',
+          properties: { id: { type: 'string', description: 'Page ID' }, limit: { type: 'number' } },
+          required: ['id'],
+          additionalProperties: false,
+        },
+      },
+      {
+        name: 'listPageLabels',
+        description: 'List labels on a page',
+        inputSchema: {
+          type: 'object',
+          properties: { id: { type: 'string', description: 'Page ID' }, limit: { type: 'number', description: 'Max labels (default 25, max 100)' } },
+          required: ['id'],
+          additionalProperties: false,
+        },
+      },
+      {
+        name: 'addPageComment',
+        description: 'Create a comment on a page',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', description: 'Page ID (preferred if known)' },
+            pageTitle: { type: 'string', description: 'Alternative: exact page title to comment on' },
+            spaceKey: { type: 'string', description: 'Optional space key to narrow title lookup' },
+            spaceName: { type: 'string', description: 'Optional space name to narrow title lookup' },
+            body: { type: 'string', description: 'Comment body; plain text is auto-wrapped to storage HTML' },
+          },
+          required: ['body'],
+          additionalProperties: false,
+        },
+      },
+      {
+        name: 'listPageAttachments',
+        description: 'List attachments on a page',
+        inputSchema: {
+          type: 'object',
+          properties: { id: { type: 'string', description: 'Page ID' }, limit: { type: 'number', description: 'Max attachments (default 25, max 100)' } },
+          required: ['id'],
+          additionalProperties: false,
+        },
+      },
+      {
+        name: 'getPageTree',
+        description: 'Return a simple children tree for a page up to a given depth',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', description: 'Root page ID' },
+            depth: { type: 'number', description: 'Depth (default 2, max 4)' },
+          },
+          required: ['id'],
+          additionalProperties: false,
+        },
+      },
+      {
+        name: 'updateComment',
+        description: 'Update a comment',
+        inputSchema: {
+          type: 'object',
+          properties: { id: { type: 'string', description: 'Comment ID' }, body: { type: 'string', description: 'New body in storage (HTML)' } },
+          required: ['id', 'body'],
+          additionalProperties: false,
+        },
+      },
+      {
+        name: 'searchConfluence',
+        description: 'Search Confluence using CQL',
+        inputSchema: {
+          type: 'object',
+          properties: { cql: { type: 'string', description: 'Confluence Query Language string' }, limit: { type: 'number' } },
+          required: ['cql'],
+          additionalProperties: false,
+        },
+      },
+      {
+        name: 'getSpace',
+        description: 'Get space details by key',
+        inputSchema: { type: 'object', properties: { key: { type: 'string' } }, required: ['key'], additionalProperties: false },
+      },
+      {
+        name: 'whoAmI',
+        description: 'Get current Confluence user profile',
+        inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+      },
+    ];
+
+    if (process.env.ALLOW_CREATE_SPACE === 'true') {
+      tools.splice(2, 0, {
+        name: 'createSpace',
+        description: 'Admin-only: create a Confluence space. Use ONLY when the user explicitly asks to create a new space. Do NOT use for creating pages.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            key: { type: 'string', description: 'Space key (2-255 chars, letters/digits)' },
+            name: { type: 'string', description: 'Space name' },
+            description: { type: 'string', description: 'Optional plain-text description' },
+            type: { type: 'string', description: 'global (default) | personal' },
+            confirm: { type: 'boolean', description: 'Must be true to proceed (safety confirmation).' },
+          },
+          required: ['key', 'name', 'confirm'],
+          additionalProperties: false,
+        },
+      });
+    }
+
+    const result = { jsonrpc: '2.0', id, result: { tools } };
     return result;
   };
 
@@ -713,6 +711,9 @@ async function handleConfluenceAsync(msg: any): Promise<any> {
       return { spaces: items, message, ui: { adaptiveCard: card } };
     }
     if (name === 'createSpace') {
+      if (process.env.ALLOW_CREATE_SPACE !== 'true') {
+        return { message: 'Space creation is disabled. Set ALLOW_CREATE_SPACE=true to enable, and only use when explicitly requested.' };
+      }
       const rawKey = String(args.key || '').trim();
       const spaceName = String(args.name || '').trim();
       const description = args.description ? String(args.description) : '';
