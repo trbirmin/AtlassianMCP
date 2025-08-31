@@ -97,6 +97,7 @@ function normalizeToolName(name: string | undefined): string {
   'confluence.getPageTree': 'getPageTree',
     // canonical passthrough
     'listSpaces': 'listSpaces',
+  'help': 'help',
     'listPagesInSpace': 'listPagesInSpace',
     'summarizePage': 'summarizePage',
     'createPage': 'createPage',
@@ -196,6 +197,11 @@ const mcpHandler = (req: Request, res: Response) => {
       id,
       result: {
         tools: [
+          {
+            name: 'help',
+            description: 'List everything that can be done (all available tools and schemas)',
+            inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+          },
           {
             name: 'listSpaces',
             description: 'List Confluence spaces you can access',
@@ -441,6 +447,18 @@ const mcpHandler = (req: Request, res: Response) => {
     const name = msg?.params?.name;
     const args = msg?.params?.arguments ?? {};
     const canonical = normalizeToolName(name);
+    if (canonical === 'help') {
+      // Build the same tools array as handleToolsList without altering its shape
+      const tools = handleToolsList({ id }).result.tools;
+      return {
+        jsonrpc: '2.0',
+        id,
+        result: {
+          message: 'Available tools (call via tools/call with the name and arguments):',
+          tools,
+        },
+      };
+    }
   if (true) {
       const confluenceCanonicals = new Set([
         'listSpaces',
