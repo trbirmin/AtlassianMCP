@@ -2,6 +2,7 @@ import express, { Request, Response } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import { fetch as undiciFetch } from 'undici';
+import { randomUUID } from 'crypto';
 
 // Use global fetch if available (Node 18+), otherwise fall back to undici
 const httpFetch: typeof fetch = (globalThis as any).fetch ?? (undiciFetch as any);
@@ -75,7 +76,9 @@ app.use(express.json({ limit: '1mb' }));
 
 // JSON-RPC handler at /mcp
 const mcpHandler = async (req: Request, res: Response) => {
-  const msg = req.body || {};
+  // Accept either parsed JSON or raw string bodies and parse
+  const raw = (req as any).body;
+  const msg = typeof raw === 'string' ? (() => { try { return JSON.parse(raw); } catch { return {}; } })() : (raw || {});
   const id = msg.id;
   const method = msg.method as string;
   if (!method) {
@@ -83,9 +86,11 @@ const mcpHandler = async (req: Request, res: Response) => {
   }
 
   if (method === 'initialize') {
+    const sessionId = randomUUID();
+    res.setHeader('Mcp-Session-Id', sessionId);
     const result = {
       protocolVersion: '2024-11-05',
-      capabilities: {},
+      capabilities: { tools: {} },
       instructions: 'You can search Confluence pages by label within a specific space using searchByLabelInSpace. Ask for any missing inputs (label, spaceKey, optional limit). Prefer tools over knowledge.',
     };
     return sendJson(res, { jsonrpc: '2.0', id, result });
