@@ -322,8 +322,10 @@ async function handleSearchPages(params: any) {
   if (!query) {
     return toolError('MISSING_INPUT', 'Missing required input: query', { missing: ['query'] });
   }
-  // Escape single quotes for CQL
-  const esc = query.replace(/'/g, "\\'");
+  // Robust CQL escaping: single quotes, backslashes, and remove control chars
+  let esc = query.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/[\x00-\x1F]/g, '');
+  // If query is only whitespace or special chars, fallback to a safe string
+  if (!esc || !esc.replace(/\s+/g, '')) esc = 'search';
   const parts = ["type=page", `text ~ '${esc}'`];
   if (spaceKey) parts.push(`space=${encodeURIComponent(spaceKey)}`);
   const cql = parts.join(' and ') + ' ORDER BY score desc, lastmodified desc';
@@ -332,7 +334,7 @@ async function handleSearchPages(params: any) {
   const res = await httpFetch(url, { headers: { Authorization: authHeader, Accept: 'application/json' } });
   if (!res.ok) {
     const text = await res.text().catch(() => '');
-    return toolError('UPSTREAM_ERROR', `Confluence API ${res.status}: ${text || res.statusText}`);
+    return toolError('UPSTREAM_ERROR', `Confluence API ${res.status}: ${text || res.statusText}`, { cql });
   }
   const data = await res.json();
   const base = baseUrl.replace(/\/$/, '');
