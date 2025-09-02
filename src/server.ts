@@ -123,11 +123,18 @@ async function handleSearchByLabelInSpace(params: any) {
   }
   const data = await res.json();
   const base = baseUrl.replace(/\/$/, '');
-  const results = (data?.results || []).map((r: any) => ({
-    id: r?.content?.id || r?.id,
-    title: r?.title || r?.content?.title,
-    url: r?.url || (base + '/wiki' + (r?._links?.webui || '')),
-  }));
+  const results = (data?.results || []).map((r: any) => {
+    const id = r?.content?.id || r?.id;
+    const title = r?.title || r?.content?.title;
+    const webui = r?.content?._links?.webui ?? r?._links?.webui ?? '';
+    let url = '';
+    if (webui) {
+      url = base + '/wiki' + webui;
+    } else if (typeof r?.url === 'string' && /^https?:\/\//.test(r.url)) {
+      url = r.url;
+    }
+    return { id, title, url };
+  });
   const card = {
     type: 'AdaptiveCard',
     $schema: 'http://adaptivecards.io/schemas/adaptive-card.json',
@@ -204,11 +211,18 @@ async function handleListPagesInSpace(params: any) {
   }
   const data = await res.json();
   const base = baseUrl.replace(/\/$/, '');
-  const results = (data?.results || []).map((r: any) => ({
-    id: r?.content?.id || r?.id,
-    title: r?.title || r?.content?.title,
-    url: r?.url || (base + '/wiki' + (r?._links?.webui || '')),
-  }));
+  const results = (data?.results || []).map((r: any) => {
+    const id = r?.content?.id || r?.id;
+    const title = r?.title || r?.content?.title;
+    const webui = r?.content?._links?.webui ?? r?._links?.webui ?? '';
+    let url = '';
+    if (webui) {
+      url = base + '/wiki' + webui;
+    } else if (typeof r?.url === 'string' && /^https?:\/\//.test(r.url)) {
+      url = r.url;
+    }
+    return { id, title, url };
+  });
   const card = {
     type: 'AdaptiveCard',
     $schema: 'http://adaptivecards.io/schemas/adaptive-card.json',
