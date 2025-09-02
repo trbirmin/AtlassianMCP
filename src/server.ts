@@ -428,8 +428,9 @@ const mcpHandler = async (req: Request, res: Response) => {
       protocolVersion: '2024-11-05',
       serverInfo: { name: 'Atlassian MCP Server', version: '0.1.1' },
       capabilities: { tools: { list: true, call: true } },
-  tools: getToolDescriptors(),
-  instructions: 'Always use tools. For any user question asking to search/find/lookup topics, call search or searchPages with query set to the user text (add spaceKey if provided). Examples: "Search for Infor OS" -> {name: search, arguments: {query: "Infor OS"}}. "Search MFS for onboarding" -> {name: search, arguments: {query: "onboarding", spaceKey: "MFS"}}. For labels, use searchByLabelInSpace (needs label and spaceKey). To browse, use listSpaces and listPagesInSpace. To list labels, use listLabels with a prefix. If inputs are missing, ask for them.',
+      tools: getToolDescriptors(),
+      instructions:
+        'Policy: Never answer from model knowledge when the user asks about Confluence content. Always call tools and return their results. Default to the search tool (alias of searchPages) for any query phrased as search/find/lookup/question: set query to the user text and include spaceKey if the user mentions a space. Examples: "Search for Infor OS" -> {name: search, arguments: {query: "Infor OS"}}; "Search MFS for onboarding" -> {name: search, arguments: {query: "onboarding", spaceKey: "MFS"}}. For labels, call searchByLabelInSpace (requires label and spaceKey). To browse, call listSpaces and listPagesInSpace. To list labels, call listLabels with a prefix. If required inputs are missing, ask a clarifying question and then call the tool. Do not fabricate answers about topics; prefer calling search/searchPages.',
     };
     return sendJson(res, { jsonrpc: '2.0', id: id ?? null, result });
   }
@@ -439,10 +440,11 @@ const mcpHandler = async (req: Request, res: Response) => {
     res.setHeader('Mcp-Session-Id', sessionId);
     const result = {
       protocolVersion: '2024-11-05',
-  serverInfo: { name: 'Atlassian MCP Server', version: '0.1.1' },
-  capabilities: { tools: { list: true, call: true } },
-  tools: getToolDescriptors(),
-  instructions: 'Always use tools. For any user question asking to search/find/lookup topics, call search or searchPages with query set to the user text (add spaceKey if provided). Examples: "Search for Infor OS" -> {name: search, arguments: {query: "Infor OS"}}. "Search MFS for onboarding" -> {name: search, arguments: {query: "onboarding", spaceKey: "MFS"}}. For labels, use searchByLabelInSpace (needs label and spaceKey). To browse, use listSpaces and listPagesInSpace. To list labels, use listLabels with a prefix. If inputs are missing, ask for them.',
+      serverInfo: { name: 'Atlassian MCP Server', version: '0.1.1' },
+      capabilities: { tools: { list: true, call: true } },
+      tools: getToolDescriptors(),
+      instructions:
+        'Policy: Never answer from model knowledge when the user asks about Confluence content. Always call tools and return their results. Default to the search tool (alias of searchPages) for any query phrased as search/find/lookup/question: set query to the user text and include spaceKey if the user mentions a space. Examples: "Search for Infor OS" -> {name: search, arguments: {query: "Infor OS"}}; "Search MFS for onboarding" -> {name: search, arguments: {query: "onboarding", spaceKey: "MFS"}}. For labels, call searchByLabelInSpace (requires label and spaceKey). To browse, call listSpaces and listPagesInSpace. To list labels, call listLabels with a prefix. If required inputs are missing, ask a clarifying question and then call the tool. Do not fabricate answers about topics; prefer calling search/searchPages.',
     };
     return sendJson(res, { jsonrpc: '2.0', id, result });
   }
