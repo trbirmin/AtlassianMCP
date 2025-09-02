@@ -143,6 +143,26 @@ app.get('/healthz', (_req, res) => res.status(200).send('ok'));
 
 const rawPort = process.env.PORT;
 const portOrPipe = rawPort && !/^\d+$/.test(rawPort) ? rawPort : Number(rawPort || 3000);
-app.listen(portOrPipe, () => {
-  console.log(`MCP server listening on ${typeof portOrPipe === 'string' ? portOrPipe : `port ${portOrPipe}`}`);
+
+// Basic diagnostics to help in Azure log streams
+console.log(`Node version: ${process.version}`);
+console.log(`Resolved PORT: ${rawPort ?? '(undefined)'} -> using ${typeof portOrPipe === 'string' ? portOrPipe : `port ${portOrPipe}`}`);
+
+// Global error handlers so crashes show up in logs
+process.on('unhandledRejection', (reason) => {
+  console.error('UnhandledRejection:', reason);
 });
+process.on('uncaughtException', (err) => {
+  console.error('UncaughtException:', err);
+});
+
+if (typeof portOrPipe === 'string') {
+  app.listen(portOrPipe, () => {
+    console.log(`MCP server listening on ${portOrPipe}`);
+  });
+} else {
+  // Explicitly bind to 0.0.0.0 for container environments
+  app.listen(portOrPipe, '0.0.0.0', () => {
+    console.log(`MCP server listening on port ${portOrPipe}`);
+  });
+}
