@@ -77,18 +77,22 @@ const allowedOrigins = (process.env.ALLOWED_ORIGINS || '')
   .map((s) => s.trim())
   .filter(Boolean);
 if (allowedOrigins.length > 0) {
-  app.use(
-    cors({
-      origin: (origin, callback) => {
-        if (!origin) return callback(null, true); // non-browser or same-origin
-        if (allowedOrigins.includes(origin)) return callback(null, true);
-        return callback(new Error('CORS not allowed for this origin'));
-      },
-      credentials: true,
-    })
-  );
+  const corsOptions: cors.CorsOptions = {
+    origin: (origin, callback) => {
+      // Allow non-browser (no Origin) and same-origin
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.includes(origin)) return callback(null, true);
+      // Disallow by returning false (no CORS headers) instead of throwing -> avoids 500s
+      return callback(null, false);
+    },
+    credentials: true,
+  };
+  app.use(cors(corsOptions));
+  // Preflight for all routes
+  app.options('*', cors(corsOptions));
 } else {
   app.use(cors());
+  app.options('*', cors());
 }
 app.use(express.json({ limit: '1mb' }));
 
@@ -179,6 +183,15 @@ app.get('/apim/:apiName/mcp', mcpGetHandler);
 app.get('/healthz', (_req, res) => res.status(200).send('ok'));
 // Root ping for Azure built-in HTTP checks
 app.get('/', (_req, res) => res.status(200).send('ok'));
+
+// Global error handler to avoid HTML 500 pages and surface JSON errors
+// Must be after routes and before the server starts listening
+app.use((err: any, _req: Request, res: Response, _next: any) => {
+  console.error('Request error:', err?.stack || err);
+  if (res.headersSent) return; // let default behavior if already started
+  const status = typeof err?.status === 'number' ? err.status : 500;
+  res.status(status).type('application/json').send({ error: 'Internal Server Error' });
+});
 
 const rawPort = process.env.PORT;
 const isWindows = process.platform === 'win32';
