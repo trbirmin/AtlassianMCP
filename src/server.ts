@@ -2,6 +2,7 @@ import express, { Request, Response } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import { fetch as undiciFetch } from 'undici';
+import morgan from 'morgan';
 import { randomUUID } from 'crypto';
 
 // Use global fetch if available (Node 18+), otherwise fall back to undici
@@ -13,8 +14,9 @@ function sendJson(res: Response, payload: any, status = 200) {
 }
 
 // Need-input helper for planners
-function needInput(inputs: Array<{ name: string; message: string }>) {
-  return { needInput: { inputs } };
+// Structured error helper for tool results
+function toolError(code: string, message: string, details?: any) {
+  return { error: { code, message, details } };
 }
 
 // SSE headers
@@ -30,16 +32,19 @@ async function handleSearchByLabelInSpace(params: any) {
   const email = process.env.CONFLUENCE_EMAIL;
   const token = process.env.CONFLUENCE_API_TOKEN;
   if (!baseUrl || !email || !token) {
-    return { error: 'Missing Confluence credentials. Set CONFLUENCE_BASE_URL, CONFLUENCE_EMAIL, and CONFLUENCE_API_TOKEN.' };
+    return toolError(
+      'MISSING_CREDENTIALS',
+      'Missing Confluence credentials. Set CONFLUENCE_BASE_URL, CONFLUENCE_EMAIL, and CONFLUENCE_API_TOKEN.'
+    );
   }
   const label = String(params?.label || '').trim();
   const spaceKey = String(params?.spaceKey || '').trim();
   const limit = Math.min(Math.max(Number(params?.limit) || 10, 1), 100);
   if (!label || !spaceKey) {
-    const ask: Array<{ name: string; message: string }> = [];
-    if (!label) ask.push({ name: 'label', message: 'Which label?' });
-    if (!spaceKey) ask.push({ name: 'spaceKey', message: 'Which space key?' });
-    return needInput(ask);
+    const missing: string[] = [];
+    if (!label) missing.push('label');
+    if (!spaceKey) missing.push('spaceKey');
+    return toolError('MISSING_INPUT', `Missing required input(s): ${missing.join(', ')}`, { missing });
   }
   const cql = `type=page and label=${encodeURIComponent(label)} and space=${encodeURIComponent(spaceKey)} ORDER BY lastmodified desc`;
   const authHeader = 'Basic ' + Buffer.from(`${email}:${token}`).toString('base64');
@@ -47,7 +52,7 @@ async function handleSearchByLabelInSpace(params: any) {
   const res = await httpFetch(url, { headers: { 'Authorization': authHeader, 'Accept': 'application/json' } });
   if (!res.ok) {
     const text = await res.text().catch(() => '');
-    return { error: `Confluence API ${res.status}: ${text || res.statusText}` };
+    return toolError('UPSTREAM_ERROR', `Confluence API ${res.status}: ${text || res.statusText}`);
   }
   const data = await res.json();
   const base = baseUrl.replace(/\/$/, '');
@@ -95,6 +100,8 @@ if (allowedOrigins.length > 0) {
   app.options('*', cors());
 }
 app.use(express.json({ limit: '1mb' }));
+// Access log
+app.use(morgan('combined'));
 
 // JSON-RPC handler at /mcp
 const mcpHandler = async (req: Request, res: Response) => {

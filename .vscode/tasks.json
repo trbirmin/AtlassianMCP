@@ -200,6 +200,19 @@
 				"$tsc"
 			],
 			"group": "build"
+		},
+		{
+			"label": "Build after diagnostics + tool error shapes",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"build"
+			],
+			"problemMatcher": [
+				"$tsc"
+			],
+			"group": "build"
 		}
 	]
 }
