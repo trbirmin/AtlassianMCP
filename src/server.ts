@@ -108,7 +108,8 @@ const mcpHandler = async (req: Request, res: Response) => {
     res.setHeader('Mcp-Session-Id', sessionId);
     const result = {
       protocolVersion: '2024-11-05',
-      capabilities: { tools: {} },
+  serverInfo: { name: 'Atlassian MCP Server', version: '0.1.1' },
+  capabilities: { tools: { list: true, call: true } },
       instructions: 'You can search Confluence pages by label within a specific space using searchByLabelInSpace. Ask for any missing inputs (label, spaceKey, optional limit). Prefer tools over knowledge.',
     };
     return sendJson(res, { jsonrpc: '2.0', id, result });
