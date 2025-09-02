@@ -31,6 +31,7 @@ jobs:
           cp -r node_modules release/node_modules
           cp openapi-mcp.yaml release/
           if [ -f Procfile ]; then cp Procfile release/; fi
+          if [ -f web.config ]; then cp web.config release/; fi
       - uses: actions/upload-artifact@v4
         with:
           name: node-app
