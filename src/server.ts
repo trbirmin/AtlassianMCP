@@ -26,6 +26,73 @@ function sseHeaders(res: Response) {
   res.setHeader('Connection', 'keep-alive');
 }
 
+// Central list of tool descriptors for reuse across initialize, tools/list, and describeTools
+function getToolDescriptors() {
+  const tools = [
+    {
+      name: 'searchByLabelInSpace',
+      description: 'Search pages by label within a space, sorted by latest modified; returns up to limit results (default 10).',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          label: { type: 'string', description: 'Confluence label (e.g., administration)' },
+          spaceKey: { type: 'string', description: 'Space key (e.g., DOC)' },
+          limit: { type: 'number', description: 'Max results (default 10, max 100)' },
+        },
+        required: ['label', 'spaceKey'],
+        additionalProperties: false,
+      },
+    },
+    {
+      name: 'listLabels',
+      description: 'List labels in the site. Optionally filter by prefix.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          prefix: { type: 'string', description: 'Filter labels starting with this string' },
+          limit: { type: 'number', description: 'Max labels to return (default 25, max 100)' },
+        },
+        required: ['prefix'],
+        additionalProperties: false,
+      },
+    },
+    {
+      name: 'listSpaces',
+      description: 'List Confluence spaces (global). Returns up to limit spaces (default 25).',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          limit: { type: 'number', description: 'Max spaces to return (default 25, max 100)' },
+        },
+        additionalProperties: false,
+      },
+    },
+    {
+      name: 'listPagesInSpace',
+      description: 'List pages within a given space, sorted by latest modified.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          spaceKey: { type: 'string', description: 'Space key (e.g., DOC)' },
+          limit: { type: 'number', description: 'Max results (default 25, max 100)' },
+        },
+        required: ['spaceKey'],
+        additionalProperties: false,
+      },
+    },
+    {
+      name: 'describeTools',
+      description: 'Summarize what this MCP can do and list all available tools with descriptions.',
+      inputSchema: {
+        type: 'object',
+        properties: {},
+        additionalProperties: false,
+      },
+    },
+  ];
+  return tools;
+}
+
 // The single tool handler
 async function handleSearchByLabelInSpace(params: any) {
   const baseUrl = process.env.CONFLUENCE_BASE_URL;
@@ -196,6 +263,21 @@ async function handleListLabels(params: any) {
   return { results, ui: { adaptiveCard: card } };
 }
 
+// Describe available tools (helper tool for capability questions)
+async function handleDescribeTools(_params: any) {
+  const tools = getToolDescriptors();
+  const card = {
+    type: 'AdaptiveCard',
+    $schema: 'http://adaptivecards.io/schemas/adaptive-card.json',
+    version: '1.5',
+    body: [
+      { type: 'TextBlock', text: 'Available MCP tools', weight: 'Bolder', size: 'Medium', wrap: true },
+      ...tools.map((t: any) => ({ type: 'TextBlock', text: `${t.name}: ${t.description}`, wrap: true })),
+    ],
+  };
+  return { tools, ui: { adaptiveCard: card } };
+}
+
 // App setup
 const app = express();
 app.use(helmet());
@@ -247,13 +329,8 @@ const mcpHandler = async (req: Request, res: Response) => {
       protocolVersion: '2024-11-05',
       serverInfo: { name: 'Atlassian MCP Server', version: '0.1.1' },
       capabilities: { tools: { list: true, call: true } },
-      tools: [
-        { name: 'searchByLabelInSpace', description: 'Search pages by label within a space, sorted by latest modified; returns up to limit results (default 10).', inputSchema: { type: 'object', properties: { label: { type: 'string' }, spaceKey: { type: 'string' }, limit: { type: 'number' } }, required: ['label', 'spaceKey'], additionalProperties: false } },
-        { name: 'listLabels', description: 'List labels in the site. Optionally filter by prefix.', inputSchema: { type: 'object', properties: { prefix: { type: 'string' }, limit: { type: 'number' } }, required: ['prefix'], additionalProperties: false } },
-        { name: 'listSpaces', description: 'List Confluence spaces (global). Returns up to limit spaces (default 25).', inputSchema: { type: 'object', properties: { limit: { type: 'number' } }, additionalProperties: false } },
-        { name: 'listPagesInSpace', description: 'List pages within a given space, sorted by latest modified.', inputSchema: { type: 'object', properties: { spaceKey: { type: 'string' }, limit: { type: 'number' } }, required: ['spaceKey'], additionalProperties: false } },
-      ],
-      instructions: 'You can search Confluence pages by label within a specific space using searchByLabelInSpace. Ask for any missing inputs (label, spaceKey, optional limit). Prefer tools over knowledge.',
+      tools: getToolDescriptors(),
+      instructions: 'If asked what you can do, call describeTools. To work with Confluence: use searchByLabelInSpace (requires label and spaceKey), listSpaces, listPagesInSpace, and listLabels (requires prefix). Prefer tools over knowledge and ask for missing inputs.',
     };
     return sendJson(res, { jsonrpc: '2.0', id: id ?? null, result });
   }
@@ -265,13 +342,8 @@ const mcpHandler = async (req: Request, res: Response) => {
       protocolVersion: '2024-11-05',
   serverInfo: { name: 'Atlassian MCP Server', version: '0.1.1' },
   capabilities: { tools: { list: true, call: true } },
-      tools: [
-        { name: 'searchByLabelInSpace', description: 'Search pages by label within a space, sorted by latest modified; returns up to limit results (default 10).', inputSchema: { type: 'object', properties: { label: { type: 'string' }, spaceKey: { type: 'string' }, limit: { type: 'number' } }, required: ['label', 'spaceKey'], additionalProperties: false } },
-        { name: 'listLabels', description: 'List labels in the site. Optionally filter by prefix.', inputSchema: { type: 'object', properties: { prefix: { type: 'string' }, limit: { type: 'number' } }, required: ['prefix'], additionalProperties: false } },
-        { name: 'listSpaces', description: 'List Confluence spaces (global). Returns up to limit spaces (default 25).', inputSchema: { type: 'object', properties: { limit: { type: 'number' } }, additionalProperties: false } },
-        { name: 'listPagesInSpace', description: 'List pages within a given space, sorted by latest modified.', inputSchema: { type: 'object', properties: { spaceKey: { type: 'string' }, limit: { type: 'number' } }, required: ['spaceKey'], additionalProperties: false } },
-      ],
-      instructions: 'You can search Confluence pages by label within a specific space using searchByLabelInSpace. Ask for any missing inputs (label, spaceKey, optional limit). Prefer tools over knowledge.',
+      tools: getToolDescriptors(),
+      instructions: 'If asked what you can do, call describeTools. To work with Confluence: use searchByLabelInSpace (requires label and spaceKey), listSpaces, listPagesInSpace, and listLabels (requires prefix). Prefer tools over knowledge and ask for missing inputs.',
     };
     return sendJson(res, { jsonrpc: '2.0', id, result });
   }
@@ -286,59 +358,7 @@ const mcpHandler = async (req: Request, res: Response) => {
   }
 
   if (norm === 'tools/list' || norm === 'mcp/tools/list' || norm === 'tools/list') {
-    const tools = [
-      {
-        name: 'searchByLabelInSpace',
-        description: 'Search pages by label within a space, sorted by latest modified; returns up to limit results (default 10).',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            label: { type: 'string', description: 'Confluence label (e.g., administration)' },
-            spaceKey: { type: 'string', description: 'Space key (e.g., DOC)' },
-            limit: { type: 'number', description: 'Max results (default 10, max 100)' },
-          },
-          required: ['label', 'spaceKey'],
-          additionalProperties: false,
-        },
-      },
-      {
-        name: 'listLabels',
-        description: 'List labels in the site. Optionally filter by prefix.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            prefix: { type: 'string', description: 'Filter labels starting with this string' },
-            limit: { type: 'number', description: 'Max labels to return (default 25, max 100)' },
-          },
-          required: ['prefix'],
-          additionalProperties: false,
-        },
-      },
-      {
-        name: 'listSpaces',
-        description: 'List Confluence spaces (global). Returns up to limit spaces (default 25).',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            limit: { type: 'number', description: 'Max spaces to return (default 25, max 100)' },
-          },
-          additionalProperties: false,
-        },
-      },
-      {
-        name: 'listPagesInSpace',
-        description: 'List pages within a given space, sorted by latest modified.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            spaceKey: { type: 'string', description: 'Space key (e.g., DOC)' },
-            limit: { type: 'number', description: 'Max results (default 25, max 100)' },
-          },
-          required: ['spaceKey'],
-          additionalProperties: false,
-        },
-      },
-    ];
+    const tools = getToolDescriptors();
     return sendJson(res, { jsonrpc: '2.0', id, result: { tools } });
   }
 
@@ -355,6 +375,8 @@ const mcpHandler = async (req: Request, res: Response) => {
       out = await handleListPagesInSpace(args);
     } else if (name === 'listLabels') {
       out = await handleListLabels(args);
+    } else if (name === 'describeTools') {
+      out = await handleDescribeTools(args);
     } else {
       return sendJson(res, { jsonrpc: '2.0', id, error: { code: -32601, message: `Tool not found: ${name}` } });
     }
