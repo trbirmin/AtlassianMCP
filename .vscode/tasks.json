@@ -239,6 +239,19 @@
 				"$tsc"
 			],
 			"group": "build"
+		},
+		{
+			"label": "Build with listLabels",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"build"
+			],
+			"problemMatcher": [
+				"$tsc"
+			],
+			"group": "build"
 		}
 	]
 }
