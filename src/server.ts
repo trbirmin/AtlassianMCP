@@ -141,7 +141,8 @@ app.get('/apim/:apiName/mcp', mcpGetHandler);
 // Health
 app.get('/healthz', (_req, res) => res.status(200).send('ok'));
 
-const port = Number(process.env.PORT || 3000);
-app.listen(port, () => {
-  console.log(`MCP server listening on port ${port}`);
+const rawPort = process.env.PORT;
+const portOrPipe = rawPort && !/^\d+$/.test(rawPort) ? rawPort : Number(rawPort || 3000);
+app.listen(portOrPipe, () => {
+  console.log(`MCP server listening on ${typeof portOrPipe === 'string' ? portOrPipe : `port ${portOrPipe}`}`);
 });
