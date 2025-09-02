@@ -144,6 +144,8 @@ app.get('/apim/:apiName/mcp', mcpGetHandler);
 
 // Health
 app.get('/healthz', (_req, res) => res.status(200).send('ok'));
+// Root ping for Azure built-in HTTP checks
+app.get('/', (_req, res) => res.status(200).send('ok'));
 
 const rawPort = process.env.PORT;
 const portOrPipe = rawPort && !/^\d+$/.test(rawPort) ? rawPort : Number(rawPort || 3000);
