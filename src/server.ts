@@ -328,14 +328,11 @@ async function handleSearchPages(params: any) {
   let cqlText;
   if (esc.startsWith('"') && esc.endsWith('"')) {
     // User input is already quoted, treat as exact phrase
-    const phrase = esc.replace(/"/g, '\\"');
-    cqlText = `text ~ "\\\"${phrase.slice(1, -1)}\\\""`;
-  } else if (/\s/.test(esc)) {
-    // Multi-word, wrap in double quotes
-    cqlText = `text ~ "${esc}"`;
+    const phrase = esc.replace(/"/g, "'");
+    cqlText = `text ~ '${phrase.slice(1, -1)}'`;
   } else {
-    // Single word
-    cqlText = `text ~ "${esc}"`;
+    // Use single quotes for all cases
+    cqlText = `text ~ '${esc}'`;
   }
   const parts = ["type=page", cqlText];
   if (spaceKey) parts.push(`space=${encodeURIComponent(spaceKey)}`);
