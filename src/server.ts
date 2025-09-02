@@ -31,7 +31,7 @@ function getToolDescriptors() {
   const tools = [
     {
       name: 'searchPages',
-      description: 'Full-text search across all Confluence pages; optionally filter by spaceKey.',
+      description: 'Full-text search across all Confluence pages. Use this whenever the user asks a question or requests information. Optionally restrict by spaceKey.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -312,7 +312,7 @@ async function handleSearchPages(params: any) {
   const esc = query.replace(/'/g, "\\'");
   const parts = ["type=page", `text ~ '${esc}'`];
   if (spaceKey) parts.push(`space=${encodeURIComponent(spaceKey)}`);
-  const cql = parts.join(' and ');
+  const cql = parts.join(' and ') + ' ORDER BY score desc, lastmodified desc';
   const authHeader = 'Basic ' + Buffer.from(`${email}:${token}`).toString('base64');
   const url = `${baseUrl.replace(/\/$/, '')}/wiki/rest/api/search?cql=${encodeURIComponent(cql)}&limit=${limit}`;
   const res = await httpFetch(url, { headers: { Authorization: authHeader, Accept: 'application/json' } });
@@ -326,13 +326,14 @@ async function handleSearchPages(params: any) {
     const id = r?.content?.id || r?.id;
     const title = r?.title || r?.content?.title;
     const webui = r?.content?._links?.webui ?? r?._links?.webui ?? '';
+    const excerpt = (r?.excerpt || '').toString();
     let url = '';
     if (webui) {
       url = base + '/wiki' + webui;
     } else if (typeof r?.url === 'string' && /^https?:\/\//.test(r.url)) {
       url = r.url;
     }
-    return { id, title, url };
+    return { id, title, url, excerpt };
   });
   const card = {
     type: 'AdaptiveCard',
@@ -340,9 +341,10 @@ async function handleSearchPages(params: any) {
     version: '1.5',
     body: [
       { type: 'TextBlock', text: `Search results for "${query}"${spaceKey ? ` in space ${spaceKey}` : ''}`, weight: 'Bolder', size: 'Medium', wrap: true },
-      ...results.slice(0, 15).map((r: any) => ({ type: 'TextBlock', text: `${r.title}\n${r.url}`, wrap: true })),
+      ...results.slice(0, 15).map((r: any) => ({ type: 'TextBlock', text: `${r.title}\n${r.url}${r.excerpt ? `\n${r.excerpt}` : ''}`, wrap: true })),
     ],
-  };
+    actions: results.slice(0, 5).map((r: any) => ({ type: 'Action.OpenUrl', title: r.title, url: r.url })),
+  } as any;
   return { cql, results, ui: { adaptiveCard: card } };
 }
 
