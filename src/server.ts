@@ -166,7 +166,10 @@ async function handleListLabels(params: any) {
     );
   }
   const limit = Math.min(Math.max(Number(params?.limit) || 25, 1), 100);
-  const prefix = String(params?.prefix || '').trim();
+  const prefix = String((params?.prefix ?? params?.label ?? params?.name ?? params?.q) || '').trim();
+  if (!prefix) {
+    return toolError('MISSING_INPUT', 'Missing required input: prefix', { missing: ['prefix'] });
+  }
   const authHeader = 'Basic ' + Buffer.from(`${email}:${token}`).toString('base64');
   const qs = new URLSearchParams({ limit: String(limit) });
   if (prefix) qs.set('prefix', prefix);
@@ -289,6 +292,7 @@ const mcpHandler = async (req: Request, res: Response) => {
             prefix: { type: 'string', description: 'Filter labels starting with this string' },
             limit: { type: 'number', description: 'Max labels to return (default 25, max 100)' },
           },
+          required: ['prefix'],
           additionalProperties: false,
         },
       },
