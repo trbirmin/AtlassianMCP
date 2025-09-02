@@ -322,11 +322,16 @@ async function handleSearchPages(params: any) {
   if (!query) {
     return toolError('MISSING_INPUT', 'Missing required input: query', { missing: ['query'] });
   }
-  // Robust CQL escaping: single quotes, backslashes, and remove control chars
-  let esc = query.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/[\x00-\x1F]/g, '');
-  // If query is only whitespace or special chars, fallback to a safe string
+  // Confluence CQL: multi-word queries should be wrapped in double quotes, and double quotes escaped with backslash
+  let esc = query.replace(/[\x00-\x1F]/g, '');
   if (!esc || !esc.replace(/\s+/g, '')) esc = 'search';
-  const parts = ["type=page", `text ~ '${esc}'`];
+  // If query contains spaces, wrap in double quotes and escape any embedded double quotes
+  if (/\s/.test(esc)) {
+    esc = esc.replace(/"/g, '\\"');
+    esc = `\"${esc}\"`;
+  }
+  // Use text ~ "phrase" for multi-word, text ~ word for single
+  const parts = ["type=page", `text ~ \"${esc}\"`];
   if (spaceKey) parts.push(`space=${encodeURIComponent(spaceKey)}`);
   const cql = parts.join(' and ') + ' ORDER BY score desc, lastmodified desc';
   const authHeader = 'Basic ' + Buffer.from(`${email}:${token}`).toString('base64');
