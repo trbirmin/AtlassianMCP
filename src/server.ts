@@ -30,6 +30,20 @@ function sseHeaders(res: Response) {
 function getToolDescriptors() {
   const tools = [
     {
+      name: 'searchPages',
+      description: 'Full-text search across all Confluence pages; optionally filter by spaceKey.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'Free-text query to search in page titles and content' },
+          spaceKey: { type: 'string', description: 'Optional Confluence space key to restrict the search' },
+          limit: { type: 'number', description: 'Max results (default 10, max 100)' },
+        },
+        required: ['query'],
+        additionalProperties: false,
+      },
+    },
+    {
       name: 'searchByLabelInSpace',
       description: 'Search pages by label within a space, sorted by latest modified; returns up to limit results (default 10).',
       inputSchema: {
@@ -277,6 +291,61 @@ async function handleListLabels(params: any) {
   return { results, ui: { adaptiveCard: card } };
 }
 
+// Full-text search across pages (optionally by space)
+async function handleSearchPages(params: any) {
+  const baseUrl = process.env.CONFLUENCE_BASE_URL;
+  const email = process.env.CONFLUENCE_EMAIL;
+  const token = process.env.CONFLUENCE_API_TOKEN;
+  if (!baseUrl || !email || !token) {
+    return toolError(
+      'MISSING_CREDENTIALS',
+      'Missing Confluence credentials. Set CONFLUENCE_BASE_URL, CONFLUENCE_EMAIL, and CONFLUENCE_API_TOKEN.'
+    );
+  }
+  const query = String((params?.query ?? params?.q ?? params?.text ?? params?.question) || '').trim();
+  const spaceKey = String(params?.spaceKey || '').trim();
+  const limit = Math.min(Math.max(Number(params?.limit) || 10, 1), 100);
+  if (!query) {
+    return toolError('MISSING_INPUT', 'Missing required input: query', { missing: ['query'] });
+  }
+  // Escape single quotes for CQL
+  const esc = query.replace(/'/g, "\\'");
+  const parts = ["type=page", `text ~ '${esc}'`];
+  if (spaceKey) parts.push(`space=${encodeURIComponent(spaceKey)}`);
+  const cql = parts.join(' and ');
+  const authHeader = 'Basic ' + Buffer.from(`${email}:${token}`).toString('base64');
+  const url = `${baseUrl.replace(/\/$/, '')}/wiki/rest/api/search?cql=${encodeURIComponent(cql)}&limit=${limit}`;
+  const res = await httpFetch(url, { headers: { Authorization: authHeader, Accept: 'application/json' } });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    return toolError('UPSTREAM_ERROR', `Confluence API ${res.status}: ${text || res.statusText}`);
+  }
+  const data = await res.json();
+  const base = baseUrl.replace(/\/$/, '');
+  const results = (data?.results || []).map((r: any) => {
+    const id = r?.content?.id || r?.id;
+    const title = r?.title || r?.content?.title;
+    const webui = r?.content?._links?.webui ?? r?._links?.webui ?? '';
+    let url = '';
+    if (webui) {
+      url = base + '/wiki' + webui;
+    } else if (typeof r?.url === 'string' && /^https?:\/\//.test(r.url)) {
+      url = r.url;
+    }
+    return { id, title, url };
+  });
+  const card = {
+    type: 'AdaptiveCard',
+    $schema: 'http://adaptivecards.io/schemas/adaptive-card.json',
+    version: '1.5',
+    body: [
+      { type: 'TextBlock', text: `Search results for "${query}"${spaceKey ? ` in space ${spaceKey}` : ''}`, weight: 'Bolder', size: 'Medium', wrap: true },
+      ...results.slice(0, 15).map((r: any) => ({ type: 'TextBlock', text: `${r.title}\n${r.url}`, wrap: true })),
+    ],
+  };
+  return { cql, results, ui: { adaptiveCard: card } };
+}
+
 // Describe available tools (helper tool for capability questions)
 async function handleDescribeTools(_params: any) {
   const tools = getToolDescriptors();
@@ -343,8 +412,8 @@ const mcpHandler = async (req: Request, res: Response) => {
       protocolVersion: '2024-11-05',
       serverInfo: { name: 'Atlassian MCP Server', version: '0.1.1' },
       capabilities: { tools: { list: true, call: true } },
-      tools: getToolDescriptors(),
-      instructions: 'If asked what you can do, call describeTools. To work with Confluence: use searchByLabelInSpace (requires label and spaceKey), listSpaces, listPagesInSpace, and listLabels (requires prefix). Prefer tools over knowledge and ask for missing inputs.',
+  tools: getToolDescriptors(),
+  instructions: 'If asked what you can do, call describeTools. For general queries, call searchPages (optional spaceKey). To work by label use searchByLabelInSpace (requires label and spaceKey). Browse with listSpaces and listPagesInSpace. Use listLabels with a prefix. Prefer tools and ask for missing inputs.',
     };
     return sendJson(res, { jsonrpc: '2.0', id: id ?? null, result });
   }
@@ -356,8 +425,8 @@ const mcpHandler = async (req: Request, res: Response) => {
       protocolVersion: '2024-11-05',
   serverInfo: { name: 'Atlassian MCP Server', version: '0.1.1' },
   capabilities: { tools: { list: true, call: true } },
-      tools: getToolDescriptors(),
-      instructions: 'If asked what you can do, call describeTools. To work with Confluence: use searchByLabelInSpace (requires label and spaceKey), listSpaces, listPagesInSpace, and listLabels (requires prefix). Prefer tools over knowledge and ask for missing inputs.',
+  tools: getToolDescriptors(),
+  instructions: 'If asked what you can do, call describeTools. For general queries, call searchPages (optional spaceKey). To work by label use searchByLabelInSpace (requires label and spaceKey). Browse with listSpaces and listPagesInSpace. Use listLabels with a prefix. Prefer tools and ask for missing inputs.',
     };
     return sendJson(res, { jsonrpc: '2.0', id, result });
   }
@@ -381,7 +450,9 @@ const mcpHandler = async (req: Request, res: Response) => {
     const name = String(params.name || '');
     const args = params.arguments || {};
     let out: any;
-    if (name === 'searchByLabelInSpace') {
+    if (name === 'searchPages') {
+      out = await handleSearchPages(args);
+    } else if (name === 'searchByLabelInSpace') {
       out = await handleSearchByLabelInSpace(args);
     } else if (name === 'listSpaces') {
       out = await handleListSpaces(args);
