@@ -169,13 +169,17 @@ const mcpHandler = async (req: Request, res: Response) => {
     const name = String(params.name || '');
     const args = params.arguments || {};
     if (name !== 'searchByLabelInSpace') {
-      return sendJson(res, { jsonrpc: '2.0', id, error: { code: -32601, message: `Tool not found: ${name}` } }, 404);
+      return sendJson(res, { jsonrpc: '2.0', id, error: { code: -32601, message: `Tool not found: ${name}` } });
     }
     const out = await handleSearchByLabelInSpace(args);
     return sendJson(res, { jsonrpc: '2.0', id, result: out });
   }
 
-  return sendJson(res, { jsonrpc: '2.0', id, error: { code: -32601, message: `Unknown method: ${method}` } }, 404);
+  if (method === 'ping' || method === 'mcp/ping') {
+    return sendJson(res, { jsonrpc: '2.0', id, result: { ok: true } });
+  }
+
+  return sendJson(res, { jsonrpc: '2.0', id, error: { code: -32601, message: `Unknown method: ${method}` } });
 };
 
 app.post('/mcp', mcpHandler);
