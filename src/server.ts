@@ -114,6 +114,15 @@ const mcpHandler = async (req: Request, res: Response) => {
     return sendJson(res, { jsonrpc: '2.0', id, result });
   }
 
+  // Gracefully accept notifications from clients; do not error out.
+  // JSON-RPC notifications typically omit "id"; per HTTP we still return 200 with empty body.
+  if (method === 'notifications/initialized') {
+    if (id === undefined || id === null) {
+      return res.status(200).end();
+    }
+    return sendJson(res, { jsonrpc: '2.0', id, result: { acknowledged: true } });
+  }
+
   if (method === 'tools/list') {
     const tools = [
       {
