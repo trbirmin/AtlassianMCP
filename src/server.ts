@@ -322,16 +322,22 @@ async function handleSearchPages(params: any) {
   if (!query) {
     return toolError('MISSING_INPUT', 'Missing required input: query', { missing: ['query'] });
   }
-  // Confluence CQL: multi-word queries should be wrapped in double quotes, and double quotes escaped with backslash
+  // Confluence CQL: multi-word queries should be wrapped in double quotes, exact phrase with backslash-escaped quotes
   let esc = query.replace(/[\x00-\x1F]/g, '');
   if (!esc || !esc.replace(/\s+/g, '')) esc = 'search';
-  // If query contains spaces, wrap in double quotes and escape any embedded double quotes
-  if (/\s/.test(esc)) {
-    esc = esc.replace(/"/g, '\\"');
-    esc = `\"${esc}\"`;
+  let cqlText;
+  if (esc.startsWith('"') && esc.endsWith('"')) {
+    // User input is already quoted, treat as exact phrase
+    const phrase = esc.replace(/"/g, '\\"');
+    cqlText = `text ~ "\\\"${phrase.slice(1, -1)}\\\""`;
+  } else if (/\s/.test(esc)) {
+    // Multi-word, wrap in double quotes
+    cqlText = `text ~ "${esc}"`;
+  } else {
+    // Single word
+    cqlText = `text ~ "${esc}"`;
   }
-  // Use text ~ "phrase" for multi-word, text ~ word for single
-  const parts = ["type=page", `text ~ \"${esc}\"`];
+  const parts = ["type=page", cqlText];
   if (spaceKey) parts.push(`space=${encodeURIComponent(spaceKey)}`);
   const cql = parts.join(' and ') + ' ORDER BY score desc, lastmodified desc';
   const authHeader = 'Basic ' + Buffer.from(`${email}:${token}`).toString('base64');
