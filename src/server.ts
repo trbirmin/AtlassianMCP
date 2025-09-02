@@ -415,7 +415,7 @@ const mcpHandler = async (req: Request, res: Response) => {
       serverInfo: { name: 'Atlassian MCP Server', version: '0.1.1' },
       capabilities: { tools: { list: true, call: true } },
   tools: getToolDescriptors(),
-  instructions: 'If asked what you can do, call describeTools. For general queries, call searchPages (optional spaceKey). To work by label use searchByLabelInSpace (requires label and spaceKey). Browse with listSpaces and listPagesInSpace. Use listLabels with a prefix. Prefer tools and ask for missing inputs.',
+  instructions: 'Always use tools. For any user question asking to search/find/lookup topics, call searchPages with query set to the user text (add spaceKey if provided). Examples: "Search for Infor OS" -> {name: searchPages, arguments: {query: "Infor OS"}}. "Search MFS for onboarding" -> {name: searchPages, arguments: {query: "onboarding", spaceKey: "MFS"}}. For labels, use searchByLabelInSpace (needs label and spaceKey). To browse, use listSpaces and listPagesInSpace. To list labels, use listLabels with a prefix. If inputs are missing, ask for them.',
     };
     return sendJson(res, { jsonrpc: '2.0', id: id ?? null, result });
   }
@@ -428,7 +428,7 @@ const mcpHandler = async (req: Request, res: Response) => {
   serverInfo: { name: 'Atlassian MCP Server', version: '0.1.1' },
   capabilities: { tools: { list: true, call: true } },
   tools: getToolDescriptors(),
-  instructions: 'If asked what you can do, call describeTools. For general queries, call searchPages (optional spaceKey). To work by label use searchByLabelInSpace (requires label and spaceKey). Browse with listSpaces and listPagesInSpace. Use listLabels with a prefix. Prefer tools and ask for missing inputs.',
+  instructions: 'Always use tools. For any user question asking to search/find/lookup topics, call searchPages with query set to the user text (add spaceKey if provided). Examples: "Search for Infor OS" -> {name: searchPages, arguments: {query: "Infor OS"}}. "Search MFS for onboarding" -> {name: searchPages, arguments: {query: "onboarding", spaceKey: "MFS"}}. For labels, use searchByLabelInSpace (needs label and spaceKey). To browse, use listSpaces and listPagesInSpace. To list labels, use listLabels with a prefix. If inputs are missing, ask for them.',
     };
     return sendJson(res, { jsonrpc: '2.0', id, result });
   }
