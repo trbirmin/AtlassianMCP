@@ -30,6 +30,20 @@ function sseHeaders(res: Response) {
 function getToolDescriptors() {
   const tools = [
     {
+      name: 'search',
+      description: 'Alias of searchPages. Full-text search across all Confluence pages; optionally restrict by spaceKey.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'Free-text query to search in page titles and content' },
+          spaceKey: { type: 'string', description: 'Optional Confluence space key to restrict the search' },
+          limit: { type: 'number', description: 'Max results (default 10, max 100)' },
+        },
+        required: ['query'],
+        additionalProperties: false,
+      },
+    },
+    {
       name: 'searchPages',
       description: 'Full-text search across all Confluence pages. Use this whenever the user asks a question or requests information. Optionally restrict by spaceKey.',
       inputSchema: {
@@ -415,7 +429,7 @@ const mcpHandler = async (req: Request, res: Response) => {
       serverInfo: { name: 'Atlassian MCP Server', version: '0.1.1' },
       capabilities: { tools: { list: true, call: true } },
   tools: getToolDescriptors(),
-  instructions: 'Always use tools. For any user question asking to search/find/lookup topics, call searchPages with query set to the user text (add spaceKey if provided). Examples: "Search for Infor OS" -> {name: searchPages, arguments: {query: "Infor OS"}}. "Search MFS for onboarding" -> {name: searchPages, arguments: {query: "onboarding", spaceKey: "MFS"}}. For labels, use searchByLabelInSpace (needs label and spaceKey). To browse, use listSpaces and listPagesInSpace. To list labels, use listLabels with a prefix. If inputs are missing, ask for them.',
+  instructions: 'Always use tools. For any user question asking to search/find/lookup topics, call search or searchPages with query set to the user text (add spaceKey if provided). Examples: "Search for Infor OS" -> {name: search, arguments: {query: "Infor OS"}}. "Search MFS for onboarding" -> {name: search, arguments: {query: "onboarding", spaceKey: "MFS"}}. For labels, use searchByLabelInSpace (needs label and spaceKey). To browse, use listSpaces and listPagesInSpace. To list labels, use listLabels with a prefix. If inputs are missing, ask for them.',
     };
     return sendJson(res, { jsonrpc: '2.0', id: id ?? null, result });
   }
@@ -428,7 +442,7 @@ const mcpHandler = async (req: Request, res: Response) => {
   serverInfo: { name: 'Atlassian MCP Server', version: '0.1.1' },
   capabilities: { tools: { list: true, call: true } },
   tools: getToolDescriptors(),
-  instructions: 'Always use tools. For any user question asking to search/find/lookup topics, call searchPages with query set to the user text (add spaceKey if provided). Examples: "Search for Infor OS" -> {name: searchPages, arguments: {query: "Infor OS"}}. "Search MFS for onboarding" -> {name: searchPages, arguments: {query: "onboarding", spaceKey: "MFS"}}. For labels, use searchByLabelInSpace (needs label and spaceKey). To browse, use listSpaces and listPagesInSpace. To list labels, use listLabels with a prefix. If inputs are missing, ask for them.',
+  instructions: 'Always use tools. For any user question asking to search/find/lookup topics, call search or searchPages with query set to the user text (add spaceKey if provided). Examples: "Search for Infor OS" -> {name: search, arguments: {query: "Infor OS"}}. "Search MFS for onboarding" -> {name: search, arguments: {query: "onboarding", spaceKey: "MFS"}}. For labels, use searchByLabelInSpace (needs label and spaceKey). To browse, use listSpaces and listPagesInSpace. To list labels, use listLabels with a prefix. If inputs are missing, ask for them.',
     };
     return sendJson(res, { jsonrpc: '2.0', id, result });
   }
@@ -452,7 +466,7 @@ const mcpHandler = async (req: Request, res: Response) => {
     const name = String(params.name || '');
     const args = params.arguments || {};
     let out: any;
-    if (name === 'searchPages') {
+  if (name === 'search' || name === 'searchPages') {
       out = await handleSearchPages(args);
     } else if (name === 'searchByLabelInSpace') {
       out = await handleSearchByLabelInSpace(args);
