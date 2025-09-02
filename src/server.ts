@@ -149,15 +149,18 @@ app.get('/', (_req, res) => res.status(200).send('ok'));
 
 const rawPort = process.env.PORT;
 const isWindows = process.platform === 'win32';
-// Some Azure setups may set PORT to a placeholder like 'not required'; treat non-numeric PORT as unset on non-Windows.
+const isAzure = !!process.env.WEBSITE_SITE_NAME;
+// Some Azure setups may set PORT to placeholders like 'not required'; treat non-numeric PORT as unset on non-Windows.
 const cleanedPort = (rawPort?.trim().toLowerCase() === 'not required') ? '' : (rawPort ?? '');
+const defaultPort = (!isWindows && isAzure) ? 8080 : 3000;
+const numericEnvPort = (cleanedPort && /^\d+$/.test(cleanedPort)) ? parseInt(cleanedPort, 10) : undefined;
 const portOrPipe = (!isWindows)
-  ? Number(cleanedPort || 3000)
-  : (cleanedPort && !/^\d+$/.test(cleanedPort) ? cleanedPort : Number(cleanedPort || 3000));
+  ? (numericEnvPort ?? defaultPort)
+  : (cleanedPort && !/^\d+$/.test(cleanedPort) ? cleanedPort : (numericEnvPort ?? defaultPort));
 
 // Basic diagnostics to help in Azure log streams
 console.log(`Node version: ${process.version}`);
-console.log(`Resolved PORT: ${rawPort ?? '(undefined)'} | platform=${process.platform} -> using ${typeof portOrPipe === 'string' ? portOrPipe : `port ${portOrPipe}`}`);
+console.log(`Resolved PORT: ${rawPort ?? '(undefined)'} | platform=${process.platform} | azure=${isAzure} -> using ${typeof portOrPipe === 'string' ? portOrPipe : `port ${portOrPipe}`}`);
 
 // Global error handlers so crashes show up in logs
 process.on('unhandledRejection', (reason) => {
