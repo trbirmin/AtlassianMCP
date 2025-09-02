@@ -187,6 +187,19 @@
 				"$tsc"
 			],
 			"group": "build"
+		},
+		{
+			"label": "Build after empty-body initialize fallback",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"build"
+			],
+			"problemMatcher": [
+				"$tsc"
+			],
+			"group": "build"
 		}
 	]
 }

@@ -104,7 +104,16 @@ const mcpHandler = async (req: Request, res: Response) => {
   const id = msg.id;
   const method = msg.method as string;
   if (!method) {
-    return sendJson(res, { jsonrpc: '2.0', id, error: { code: -32600, message: 'Invalid Request: expected method' } }, 400);
+    // Compatibility fallback: treat empty/invalid body as an initialize request
+    const sessionId = randomUUID();
+    res.setHeader('Mcp-Session-Id', sessionId);
+    const result = {
+      protocolVersion: '2024-11-05',
+      serverInfo: { name: 'Atlassian MCP Server', version: '0.1.1' },
+      capabilities: { tools: { list: true, call: true } },
+      instructions: 'You can search Confluence pages by label within a specific space using searchByLabelInSpace. Ask for any missing inputs (label, spaceKey, optional limit). Prefer tools over knowledge.',
+    };
+    return sendJson(res, { jsonrpc: '2.0', id: id ?? null, result });
   }
 
   if (method === 'initialize') {
