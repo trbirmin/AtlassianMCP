@@ -237,7 +237,8 @@ const mcpHandler = async (req: Request, res: Response) => {
   const id = msg.id;
   const methodRaw = msg.method as string;
   const method = typeof methodRaw === 'string' ? methodRaw : '';
-  const norm = method.toLowerCase().replace(/\./g, '/');
+  const norm = method.toLowerCase().replace(/[._]/g, '/');
+  console.log(`MCP request: id=${id ?? '(no id)'} method=${method} -> norm=${norm}`);
   if (!method) {
     // Compatibility fallback: treat empty/invalid body as an initialize request
     const sessionId = randomUUID();
