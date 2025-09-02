@@ -235,7 +235,9 @@ const mcpHandler = async (req: Request, res: Response) => {
   const raw = (req as any).body;
   const msg = typeof raw === 'string' ? (() => { try { return JSON.parse(raw); } catch { return {}; } })() : (raw || {});
   const id = msg.id;
-  const method = msg.method as string;
+  const methodRaw = msg.method as string;
+  const method = typeof methodRaw === 'string' ? methodRaw : '';
+  const norm = method.toLowerCase().replace(/\./g, '/');
   if (!method) {
     // Compatibility fallback: treat empty/invalid body as an initialize request
     const sessionId = randomUUID();
@@ -255,7 +257,7 @@ const mcpHandler = async (req: Request, res: Response) => {
     return sendJson(res, { jsonrpc: '2.0', id: id ?? null, result });
   }
 
-  if (method === 'initialize') {
+  if (norm === 'initialize' || norm === 'mcp/initialize') {
     const sessionId = randomUUID();
     res.setHeader('Mcp-Session-Id', sessionId);
     const result = {
@@ -275,14 +277,14 @@ const mcpHandler = async (req: Request, res: Response) => {
 
   // Gracefully accept notifications from clients; do not error out.
   // JSON-RPC notifications typically omit "id"; per HTTP we still return 200 with empty body.
-  if (method === 'notifications/initialized') {
+  if (norm === 'notifications/initialized' || norm === 'mcp/notifications/initialized') {
     if (id === undefined || id === null) {
       return res.status(200).end();
     }
     return sendJson(res, { jsonrpc: '2.0', id, result: { acknowledged: true } });
   }
 
-  if (method === 'tools/list') {
+  if (norm === 'tools/list' || norm === 'mcp/tools/list' || norm === 'tools/list') {
     const tools = [
       {
         name: 'searchByLabelInSpace',
@@ -339,7 +341,7 @@ const mcpHandler = async (req: Request, res: Response) => {
     return sendJson(res, { jsonrpc: '2.0', id, result: { tools } });
   }
 
-  if (method === 'tools/call') {
+  if (norm === 'tools/call' || norm === 'mcp/tools/call' || norm === 'tool/call') {
     const params = msg.params || {};
     const name = String(params.name || '');
     const args = params.arguments || {};
@@ -358,11 +360,11 @@ const mcpHandler = async (req: Request, res: Response) => {
     return sendJson(res, { jsonrpc: '2.0', id, result: out });
   }
 
-  if (method === 'ping' || method === 'mcp/ping') {
+  if (norm === 'ping' || norm === 'mcp/ping') {
     return sendJson(res, { jsonrpc: '2.0', id, result: { ok: true } });
   }
 
-  return sendJson(res, { jsonrpc: '2.0', id, error: { code: -32601, message: `Unknown method: ${method}` } });
+  return sendJson(res, { jsonrpc: '2.0', id, error: { code: -32601, message: `Unknown method: ${method || '(empty)'}` } });
 };
 
 app.post('/mcp', mcpHandler);
