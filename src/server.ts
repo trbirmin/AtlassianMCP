@@ -1,6 +1,10 @@
 import express, { Request, Response } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
+import { fetch as undiciFetch } from 'undici';
+
+// Use global fetch if available (Node 18+), otherwise fall back to undici
+const httpFetch: typeof fetch = (globalThis as any).fetch ?? (undiciFetch as any);
 
 // Minimal JSON utility
 function sendJson(res: Response, payload: any, status = 200) {
@@ -39,7 +43,7 @@ async function handleSearchByLabelInSpace(params: any) {
   const cql = `type=page and label=${encodeURIComponent(label)} and space=${encodeURIComponent(spaceKey)} ORDER BY lastmodified desc`;
   const authHeader = 'Basic ' + Buffer.from(`${email}:${token}`).toString('base64');
   const url = `${baseUrl.replace(/\/$/, '')}/wiki/rest/api/search?cql=${encodeURIComponent(cql)}&limit=${limit}`;
-  const res = await fetch(url, { headers: { 'Authorization': authHeader, 'Accept': 'application/json' } });
+  const res = await httpFetch(url, { headers: { 'Authorization': authHeader, 'Accept': 'application/json' } });
   if (!res.ok) {
     const text = await res.text().catch(() => '');
     return { error: `Confluence API ${res.status}: ${text || res.statusText}` };
