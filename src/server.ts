@@ -223,6 +223,9 @@ if (allowedOrigins.length > 0) {
   app.options('*', cors());
 }
 app.use(express.json({ limit: '1mb' }));
+// Some MCP clients send JSON with non-JSON content-type (e.g., text/plain). Parse text for MCP routes and JSON.parse in handler.
+const mcpPaths = ['/mcp', '/:connectionId/mcp', '/apim/:apiName/:connectionId/mcp', '/apim/:apiName/mcp'];
+app.use(mcpPaths, express.text({ type: '*/*', limit: '1mb' }));
 // Access log
 app.use(morgan('combined'));
 
@@ -241,6 +244,12 @@ const mcpHandler = async (req: Request, res: Response) => {
       protocolVersion: '2024-11-05',
       serverInfo: { name: 'Atlassian MCP Server', version: '0.1.1' },
       capabilities: { tools: { list: true, call: true } },
+      tools: [
+        { name: 'searchByLabelInSpace', description: 'Search pages by label within a space, sorted by latest modified; returns up to limit results (default 10).', inputSchema: { type: 'object', properties: { label: { type: 'string' }, spaceKey: { type: 'string' }, limit: { type: 'number' } }, required: ['label', 'spaceKey'], additionalProperties: false } },
+        { name: 'listLabels', description: 'List labels in the site. Optionally filter by prefix.', inputSchema: { type: 'object', properties: { prefix: { type: 'string' }, limit: { type: 'number' } }, required: ['prefix'], additionalProperties: false } },
+        { name: 'listSpaces', description: 'List Confluence spaces (global). Returns up to limit spaces (default 25).', inputSchema: { type: 'object', properties: { limit: { type: 'number' } }, additionalProperties: false } },
+        { name: 'listPagesInSpace', description: 'List pages within a given space, sorted by latest modified.', inputSchema: { type: 'object', properties: { spaceKey: { type: 'string' }, limit: { type: 'number' } }, required: ['spaceKey'], additionalProperties: false } },
+      ],
       instructions: 'You can search Confluence pages by label within a specific space using searchByLabelInSpace. Ask for any missing inputs (label, spaceKey, optional limit). Prefer tools over knowledge.',
     };
     return sendJson(res, { jsonrpc: '2.0', id: id ?? null, result });
@@ -253,6 +262,12 @@ const mcpHandler = async (req: Request, res: Response) => {
       protocolVersion: '2024-11-05',
   serverInfo: { name: 'Atlassian MCP Server', version: '0.1.1' },
   capabilities: { tools: { list: true, call: true } },
+      tools: [
+        { name: 'searchByLabelInSpace', description: 'Search pages by label within a space, sorted by latest modified; returns up to limit results (default 10).', inputSchema: { type: 'object', properties: { label: { type: 'string' }, spaceKey: { type: 'string' }, limit: { type: 'number' } }, required: ['label', 'spaceKey'], additionalProperties: false } },
+        { name: 'listLabels', description: 'List labels in the site. Optionally filter by prefix.', inputSchema: { type: 'object', properties: { prefix: { type: 'string' }, limit: { type: 'number' } }, required: ['prefix'], additionalProperties: false } },
+        { name: 'listSpaces', description: 'List Confluence spaces (global). Returns up to limit spaces (default 25).', inputSchema: { type: 'object', properties: { limit: { type: 'number' } }, additionalProperties: false } },
+        { name: 'listPagesInSpace', description: 'List pages within a given space, sorted by latest modified.', inputSchema: { type: 'object', properties: { spaceKey: { type: 'string' }, limit: { type: 'number' } }, required: ['spaceKey'], additionalProperties: false } },
+      ],
       instructions: 'You can search Confluence pages by label within a specific space using searchByLabelInSpace. Ask for any missing inputs (label, spaceKey, optional limit). Prefer tools over knowledge.',
     };
     return sendJson(res, { jsonrpc: '2.0', id, result });
@@ -371,6 +386,21 @@ app.get('/apim/:apiName/mcp', mcpGetHandler);
 app.get('/healthz', (_req, res) => res.status(200).send('ok'));
 // Root ping for Azure built-in HTTP checks
 app.get('/', (_req, res) => res.status(200).send('ok'));
+// Serve a minimal OpenAPI with x-ms-agentic-protocol so Copilot Studio can confirm protocol and paths
+app.get('/.well-known/openapi.json', (_req, res) => {
+  const spec = {
+    swagger: '2.0',
+    info: { title: 'Atlassian MCP Server', version: '0.1.1' },
+    schemes: ['https'],
+    consumes: ['application/json'],
+    produces: ['application/json'],
+    paths: {
+      '/mcp': { post: { 'x-ms-agentic-protocol': 'mcp-streamable-1.0', responses: { '200': { description: 'OK' } } } },
+      '/healthz': { get: { responses: { '200': { description: 'OK' } } } },
+    },
+  } as any;
+  res.json(spec);
+});
 
 // Global error handler to avoid HTML 500 pages and surface JSON errors
 // Must be after routes and before the server starts listening
