@@ -71,7 +71,25 @@ async function handleSearchByLabelInSpace(params: any) {
 // App setup
 const app = express();
 app.use(helmet());
-app.use(cors());
+// Configure CORS: if ALLOWED_ORIGINS is provided (comma-separated), restrict to that list; otherwise allow all
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || '')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
+if (allowedOrigins.length > 0) {
+  app.use(
+    cors({
+      origin: (origin, callback) => {
+        if (!origin) return callback(null, true); // non-browser or same-origin
+        if (allowedOrigins.includes(origin)) return callback(null, true);
+        return callback(new Error('CORS not allowed for this origin'));
+      },
+      credentials: true,
+    })
+  );
+} else {
+  app.use(cors());
+}
 app.use(express.json({ limit: '1mb' }));
 
 // JSON-RPC handler at /mcp

@@ -122,6 +122,19 @@
 				"$tsc"
 			],
 			"group": "build"
+		},
+		{
+			"label": "Rebuild TypeScript",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"build"
+			],
+			"problemMatcher": [
+				"$tsc"
+			],
+			"group": "build"
 		}
 	]
 }
