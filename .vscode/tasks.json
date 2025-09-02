@@ -226,6 +226,19 @@
 				"$tsc"
 			],
 			"group": "build"
+		},
+		{
+			"label": "Build with new tools",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"build"
+			],
+			"problemMatcher": [
+				"$tsc"
+			],
+			"group": "build"
 		}
 	]
 }

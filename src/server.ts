@@ -73,6 +73,87 @@ async function handleSearchByLabelInSpace(params: any) {
   return { cql, results, ui: { adaptiveCard: card } };
 }
 
+// List all (global) spaces, limited
+async function handleListSpaces(params: any) {
+  const baseUrl = process.env.CONFLUENCE_BASE_URL;
+  const email = process.env.CONFLUENCE_EMAIL;
+  const token = process.env.CONFLUENCE_API_TOKEN;
+  if (!baseUrl || !email || !token) {
+    return toolError(
+      'MISSING_CREDENTIALS',
+      'Missing Confluence credentials. Set CONFLUENCE_BASE_URL, CONFLUENCE_EMAIL, and CONFLUENCE_API_TOKEN.'
+    );
+  }
+  const limit = Math.min(Math.max(Number(params?.limit) || 25, 1), 100);
+  const authHeader = 'Basic ' + Buffer.from(`${email}:${token}`).toString('base64');
+  const url = `${baseUrl.replace(/\/$/, '')}/wiki/rest/api/space?limit=${limit}`;
+  const res = await httpFetch(url, { headers: { Authorization: authHeader, Accept: 'application/json' } });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    return toolError('UPSTREAM_ERROR', `Confluence API ${res.status}: ${text || res.statusText}`);
+  }
+  const data = await res.json();
+  const base = baseUrl.replace(/\/$/, '');
+  const results = (data?.results || []).map((s: any) => ({
+    key: s?.key,
+    name: s?.name,
+    url: base + '/wiki' + (s?._links?.webui || ''),
+  }));
+  const card = {
+    type: 'AdaptiveCard',
+    $schema: 'http://adaptivecards.io/schemas/adaptive-card.json',
+    version: '1.5',
+    body: [
+      { type: 'TextBlock', text: `Spaces (max ${limit})`, weight: 'Bolder', size: 'Medium', wrap: true },
+      ...results.slice(0, 15).map((r: any) => ({ type: 'TextBlock', text: `${r.key} — ${r.name}\n${r.url}`, wrap: true })),
+    ],
+  };
+  return { results, ui: { adaptiveCard: card } };
+}
+
+// List pages within a space, sorted by last modified
+async function handleListPagesInSpace(params: any) {
+  const baseUrl = process.env.CONFLUENCE_BASE_URL;
+  const email = process.env.CONFLUENCE_EMAIL;
+  const token = process.env.CONFLUENCE_API_TOKEN;
+  if (!baseUrl || !email || !token) {
+    return toolError(
+      'MISSING_CREDENTIALS',
+      'Missing Confluence credentials. Set CONFLUENCE_BASE_URL, CONFLUENCE_EMAIL, and CONFLUENCE_API_TOKEN.'
+    );
+  }
+  const spaceKey = String(params?.spaceKey || '').trim();
+  const limit = Math.min(Math.max(Number(params?.limit) || 25, 1), 100);
+  if (!spaceKey) {
+    return toolError('MISSING_INPUT', 'Missing required input: spaceKey', { missing: ['spaceKey'] });
+  }
+  const cql = `type=page and space=${encodeURIComponent(spaceKey)} ORDER BY lastmodified desc`;
+  const authHeader = 'Basic ' + Buffer.from(`${email}:${token}`).toString('base64');
+  const url = `${baseUrl.replace(/\/$/, '')}/wiki/rest/api/search?cql=${encodeURIComponent(cql)}&limit=${limit}`;
+  const res = await httpFetch(url, { headers: { Authorization: authHeader, Accept: 'application/json' } });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    return toolError('UPSTREAM_ERROR', `Confluence API ${res.status}: ${text || res.statusText}`);
+  }
+  const data = await res.json();
+  const base = baseUrl.replace(/\/$/, '');
+  const results = (data?.results || []).map((r: any) => ({
+    id: r?.content?.id || r?.id,
+    title: r?.title || r?.content?.title,
+    url: r?.url || (base + '/wiki' + (r?._links?.webui || '')),
+  }));
+  const card = {
+    type: 'AdaptiveCard',
+    $schema: 'http://adaptivecards.io/schemas/adaptive-card.json',
+    version: '1.5',
+    body: [
+      { type: 'TextBlock', text: `Pages in ${spaceKey} (max ${limit})`, weight: 'Bolder', size: 'Medium', wrap: true },
+      ...results.slice(0, 15).map((r: any) => ({ type: 'TextBlock', text: `${r.title}\n${r.url}`, wrap: true })),
+    ],
+  };
+  return { cql, results, ui: { adaptiveCard: card } };
+}
+
 // App setup
 const app = express();
 app.use(helmet());
@@ -160,6 +241,30 @@ const mcpHandler = async (req: Request, res: Response) => {
           additionalProperties: false,
         },
       },
+      {
+        name: 'listSpaces',
+        description: 'List Confluence spaces (global). Returns up to limit spaces (default 25).',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            limit: { type: 'number', description: 'Max spaces to return (default 25, max 100)' },
+          },
+          additionalProperties: false,
+        },
+      },
+      {
+        name: 'listPagesInSpace',
+        description: 'List pages within a given space, sorted by latest modified.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            spaceKey: { type: 'string', description: 'Space key (e.g., DOC)' },
+            limit: { type: 'number', description: 'Max results (default 25, max 100)' },
+          },
+          required: ['spaceKey'],
+          additionalProperties: false,
+        },
+      },
     ];
     return sendJson(res, { jsonrpc: '2.0', id, result: { tools } });
   }
@@ -168,10 +273,16 @@ const mcpHandler = async (req: Request, res: Response) => {
     const params = msg.params || {};
     const name = String(params.name || '');
     const args = params.arguments || {};
-    if (name !== 'searchByLabelInSpace') {
+    let out: any;
+    if (name === 'searchByLabelInSpace') {
+      out = await handleSearchByLabelInSpace(args);
+    } else if (name === 'listSpaces') {
+      out = await handleListSpaces(args);
+    } else if (name === 'listPagesInSpace') {
+      out = await handleListPagesInSpace(args);
+    } else {
       return sendJson(res, { jsonrpc: '2.0', id, error: { code: -32601, message: `Tool not found: ${name}` } });
     }
-    const out = await handleSearchByLabelInSpace(args);
     return sendJson(res, { jsonrpc: '2.0', id, result: out });
   }
 
