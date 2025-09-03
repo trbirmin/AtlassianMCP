@@ -588,9 +588,9 @@ if (allowedOrigins.length > 0) {
 
 app.use(express.json({ limit: '1mb' }));
 
-// Handle raw text for MCP clients
+// Handle raw text for MCP clients (accept both JSON and text)
 const mcpPaths = ['/mcp', '/:connectionId/mcp', '/apim/:apiName/:connectionId/mcp', '/apim/:apiName/mcp'];
-app.use(mcpPaths, express.text({ type: '*/*', limit: '1mb' }));
+app.use(mcpPaths, express.text({ type: ['text/*', 'application/json', 'application/*+json'], limit: '1mb' }));
 
 // Access log
 app.use(morgan('combined'));
@@ -598,7 +598,16 @@ app.use(morgan('combined'));
 // === JSON-RPC handler ===
 const mcpHandler = async (req: Request, res: Response) => {
   const raw = (req as any).body;
-  const msg = typeof raw === 'string' ? (() => { try { return JSON.parse(raw); } catch { return {}; } })() : (raw || {});
+  let msg: any;
+  if (typeof raw === 'string') {
+    try {
+      msg = JSON.parse(raw);
+    } catch (e) {
+      return sendJson(res, { jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Parse error: invalid JSON' } });
+    }
+  } else {
+    msg = raw || {};
+  }
   const id = msg.id;
   const method = typeof msg.method === 'string' ? msg.method : '';
   const norm = method.toLowerCase().replace(/[._]/g, '/');
@@ -690,11 +699,21 @@ app.post('/apim/:apiName/mcp', mcpHandler);
 
 // === SSE endpoint ===
 const mcpGetHandler = (req: Request, res: Response) => {
-  if (!(req.header('Accept') || '').includes('text/event-stream')) {
-    return res.status(405).send('Method Not Allowed');
+  const wantsSse = (req.header('Accept') || '').includes('text/event-stream');
+  if (!wantsSse) {
+    // Gracefully acknowledge non-SSE probes instead of 405 to avoid host errors
+    return res.status(200).json({ ok: true, message: 'MCP endpoint. Use POST /mcp for JSON-RPC.' });
   }
+  // Minimal SSE: open stream and send periodic keep-alives
   sseHeaders(res);
-  res.end();
+  try {
+    res.write(': connected\n\n');
+  } catch {}
+  const interval = setInterval(() => {
+    try { res.write(': keep-alive\n\n'); } catch {}
+  }, 25000);
+  req.on('close', () => clearInterval(interval));
+  // Keep the connection open
 };
 app.get('/mcp', mcpGetHandler);
 app.get('/:connectionId/mcp', mcpGetHandler);
