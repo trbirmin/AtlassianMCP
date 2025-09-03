@@ -326,18 +326,27 @@ async function handleSearchPages(params: any) {
   }
   let esc = query.replace(/[\x00-\x1F]/g, '');
   if (!esc || !esc.replace(/\s+/g, '')) esc = 'search';
+  // Build CQL for text search per Atlassian docs:
+  // - exact phrase requires escaping quotes inside the CQL value: text ~ "\"advanced search\""
+  // - single word fuzzy search can omit quotes: text ~ word
   let cqlText: string;
-  if (esc.startsWith('"') && esc.endsWith('"')) {
-    const phrase = esc.replace(/"/g, '');
-    cqlText = `text ~ "\\\"${phrase.slice(1, -1)}\\\""`;
-  } else if (/\s/.test(esc)) {
-    cqlText = `text ~ "\\\"${esc}\\\""`;
+  const trimmed = esc.trim();
+  if (/^".+"$/.test(trimmed)) {
+    // User already provided quotes -> treat as phrase, strip outer quotes and escape inner quotes
+    const inner = trimmed.slice(1, -1).replace(/"/g, '\\"');
+    cqlText = `text ~ "\\\"${inner}\\\""`;
+  } else if (/\s/.test(trimmed)) {
+    // Phrase without surrounding quotes -> make an exact phrase
+    const inner = trimmed.replace(/"/g, '\\"');
+    cqlText = `text ~ "\\\"${inner}\\\""`;
   } else {
-    cqlText = `text ~ "${esc}"`;
+    // Single word fuzzy
+    cqlText = `text ~ ${trimmed}`;
   }
   const parts = ['type=page', cqlText];
   if (spaceKey) parts.push(`space=${encodeURIComponent(spaceKey)}`);
-  const cql = parts.join(' and ') + ' ORDER BY score desc, lastmodified desc';
+  // Avoid unsupported ORDER BY fields like 'score'; prefer lastmodified for stability
+  const cql = parts.join(' and ') + ' ORDER BY lastmodified desc';
   const authHeader = 'Basic ' + Buffer.from(`${email}:${token}`).toString('base64');
   const url = `${baseUrl.replace(/\/$/, '')}/wiki/rest/api/search?cql=${encodeURIComponent(cql)}&limit=${limit}`;
   const res = await httpFetch(url, { headers: { Authorization: authHeader, Accept: 'application/json' } });
