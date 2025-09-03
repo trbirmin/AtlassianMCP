@@ -125,23 +125,254 @@ function getToolDescriptors() {
 // === Tool handlers ===
 // (unchanged except cleanup and consistency)
 async function handleSearchByLabelInSpace(params: any) {
-  // ... unchanged logic ...
+  const baseUrl = process.env.CONFLUENCE_BASE_URL;
+  const email = process.env.CONFLUENCE_EMAIL;
+  const token = process.env.CONFLUENCE_API_TOKEN;
+  if (!baseUrl || !email || !token) {
+    return toolError(
+      'MISSING_CREDENTIALS',
+      'Missing Confluence credentials. Set CONFLUENCE_BASE_URL, CONFLUENCE_EMAIL, and CONFLUENCE_API_TOKEN.'
+    );
+  }
+
+  const label = String(params?.label || '').trim();
+  const spaceKey = String(params?.spaceKey || '').trim();
+  const limit = Math.min(Math.max(Number(params?.limit) || 10, 1), 100);
+  if (!label || !spaceKey) {
+    const missing: string[] = [];
+    if (!label) missing.push('label');
+    if (!spaceKey) missing.push('spaceKey');
+    return toolError('MISSING_INPUT', `Missing required input(s): ${missing.join(', ')}`, { missing });
+  }
+
+  const cql = `type=page and label=${encodeURIComponent(label)} and space=${encodeURIComponent(
+    spaceKey
+  )} ORDER BY lastmodified desc`;
+  const authHeader = 'Basic ' + Buffer.from(`${email}:${token}`).toString('base64');
+  const url = `${baseUrl.replace(/\/$/, '')}/wiki/rest/api/search?cql=${encodeURIComponent(cql)}&limit=${limit}`;
+  const res = await httpFetch(url, { headers: { Authorization: authHeader, Accept: 'application/json' } });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    return toolError('UPSTREAM_ERROR', `Confluence API ${res.status}: ${text || res.statusText}`);
+  }
+  const data = await res.json();
+  const base = baseUrl.replace(/\/$/, '');
+  const results = (data?.results || []).map((r: any) => {
+    const id = r?.content?.id || r?.id;
+    const title = r?.title || r?.content?.title;
+    const webui = r?.content?._links?.webui ?? r?._links?.webui ?? '';
+    let url = '';
+    if (webui) {
+      url = base + '/wiki' + webui;
+    } else if (typeof r?.url === 'string' && /^https?:\/\//.test(r.url)) {
+      url = r.url;
+    }
+    return { id, title, url };
+  });
+  const card = {
+    type: 'AdaptiveCard',
+    $schema: 'http://adaptivecards.io/schemas/adaptive-card.json',
+    version: '1.5',
+    body: [
+      { type: 'TextBlock', text: `Results for label "${label}" in space ${spaceKey}`, weight: 'Bolder', size: 'Medium', wrap: true },
+      ...results.slice(0, 15).map((r: any) => ({ type: 'TextBlock', text: `${r.title}\n${r.url}`, wrap: true })),
+    ],
+  } as const;
+  return { cql, results, ui: { adaptiveCard: card } };
 }
 
 async function handleListSpaces(params: any) {
-  // ... unchanged logic ...
+  const baseUrl = process.env.CONFLUENCE_BASE_URL;
+  const email = process.env.CONFLUENCE_EMAIL;
+  const token = process.env.CONFLUENCE_API_TOKEN;
+  if (!baseUrl || !email || !token) {
+    return toolError(
+      'MISSING_CREDENTIALS',
+      'Missing Confluence credentials. Set CONFLUENCE_BASE_URL, CONFLUENCE_EMAIL, and CONFLUENCE_API_TOKEN.'
+    );
+  }
+  const limit = Math.min(Math.max(Number(params?.limit) || 25, 1), 100);
+  const authHeader = 'Basic ' + Buffer.from(`${email}:${token}`).toString('base64');
+  const url = `${baseUrl.replace(/\/$/, '')}/wiki/rest/api/space?limit=${limit}`;
+  const res = await httpFetch(url, { headers: { Authorization: authHeader, Accept: 'application/json' } });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    return toolError('UPSTREAM_ERROR', `Confluence API ${res.status}: ${text || res.statusText}`);
+  }
+  const data = await res.json();
+  const base = baseUrl.replace(/\/$/, '');
+  const results = (data?.results || []).map((s: any) => ({
+    key: s?.key,
+    name: s?.name,
+    url: base + '/wiki' + (s?._links?.webui || ''),
+  }));
+  const card = {
+    type: 'AdaptiveCard',
+    $schema: 'http://adaptivecards.io/schemas/adaptive-card.json',
+    version: '1.5',
+    body: [
+      { type: 'TextBlock', text: `Spaces (max ${limit})`, weight: 'Bolder', size: 'Medium', wrap: true },
+      ...results.slice(0, 15).map((r: any) => ({ type: 'TextBlock', text: `${r.key} — ${r.name}\n${r.url}`, wrap: true })),
+    ],
+  } as const;
+  return { results, ui: { adaptiveCard: card } };
 }
 
 async function handleListPagesInSpace(params: any) {
-  // ... unchanged logic ...
+  const baseUrl = process.env.CONFLUENCE_BASE_URL;
+  const email = process.env.CONFLUENCE_EMAIL;
+  const token = process.env.CONFLUENCE_API_TOKEN;
+  if (!baseUrl || !email || !token) {
+    return toolError(
+      'MISSING_CREDENTIALS',
+      'Missing Confluence credentials. Set CONFLUENCE_BASE_URL, CONFLUENCE_EMAIL, and CONFLUENCE_API_TOKEN.'
+    );
+  }
+  const spaceKey = String(params?.spaceKey || '').trim();
+  const limit = Math.min(Math.max(Number(params?.limit) || 25, 1), 100);
+  if (!spaceKey) {
+    return toolError('MISSING_INPUT', 'Missing required input: spaceKey', { missing: ['spaceKey'] });
+  }
+  const cql = `type=page and space=${encodeURIComponent(spaceKey)} ORDER BY lastmodified desc`;
+  const authHeader = 'Basic ' + Buffer.from(`${email}:${token}`).toString('base64');
+  const url = `${baseUrl.replace(/\/$/, '')}/wiki/rest/api/search?cql=${encodeURIComponent(cql)}&limit=${limit}`;
+  const res = await httpFetch(url, { headers: { Authorization: authHeader, Accept: 'application/json' } });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    return toolError('UPSTREAM_ERROR', `Confluence API ${res.status}: ${text || res.statusText}`);
+  }
+  const data = await res.json();
+  const base = baseUrl.replace(/\/$/, '');
+  const results = (data?.results || []).map((r: any) => {
+    const id = r?.content?.id || r?.id;
+    const title = r?.title || r?.content?.title;
+    const webui = r?.content?._links?.webui ?? r?._links?.webui ?? '';
+    let url = '';
+    if (webui) {
+      url = base + '/wiki' + webui;
+    } else if (typeof r?.url === 'string' && /^https?:\/\//.test(r.url)) {
+      url = r.url;
+    }
+    return { id, title, url };
+  });
+  const card = {
+    type: 'AdaptiveCard',
+    $schema: 'http://adaptivecards.io/schemas/adaptive-card.json',
+    version: '1.5',
+    body: [
+      { type: 'TextBlock', text: `Pages in ${spaceKey} (max ${limit})`, weight: 'Bolder', size: 'Medium', wrap: true },
+      ...results.slice(0, 15).map((r: any) => ({ type: 'TextBlock', text: `${r.title}\n${r.url}`, wrap: true })),
+    ],
+  } as const;
+  return { cql, results, ui: { adaptiveCard: card } };
 }
 
 async function handleListLabels(params: any) {
-  // ... unchanged logic ...
+  const baseUrl = process.env.CONFLUENCE_BASE_URL;
+  const email = process.env.CONFLUENCE_EMAIL;
+  const token = process.env.CONFLUENCE_API_TOKEN;
+  if (!baseUrl || !email || !token) {
+    return toolError(
+      'MISSING_CREDENTIALS',
+      'Missing Confluence credentials. Set CONFLUENCE_BASE_URL, CONFLUENCE_EMAIL, and CONFLUENCE_API_TOKEN.'
+    );
+  }
+  const limit = Math.min(Math.max(Number(params?.limit) || 25, 1), 100);
+  const prefix = String((params?.prefix ?? params?.label ?? params?.name ?? params?.q) || '').trim();
+  if (!prefix) {
+    return toolError('MISSING_INPUT', 'Missing required input: prefix', { missing: ['prefix'] });
+  }
+  const authHeader = 'Basic ' + Buffer.from(`${email}:${token}`).toString('base64');
+  const qs = new URLSearchParams({ limit: String(limit) });
+  if (prefix) qs.set('prefix', prefix);
+  const url = `${baseUrl.replace(/\/$/, '')}/wiki/rest/api/label?${qs.toString()}`;
+  const res = await httpFetch(url, { headers: { Authorization: authHeader, Accept: 'application/json' } });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    return toolError('UPSTREAM_ERROR', `Confluence API ${res.status}: ${text || res.statusText}`);
+  }
+  const data = await res.json();
+  const results = ((data as any)?.results || (data as any)?.labels || (data as any) || []).map((l: any) => ({
+    name: typeof l === 'string' ? l : l?.name || '',
+    prefix: l?.prefix,
+  })).filter((x: any) => x.name);
+  const card = {
+    type: 'AdaptiveCard',
+    $schema: 'http://adaptivecards.io/schemas/adaptive-card.json',
+    version: '1.5',
+    body: [
+      { type: 'TextBlock', text: `Labels${prefix ? ` with prefix "${prefix}"` : ''} (max ${limit})`, weight: 'Bolder', size: 'Medium', wrap: true },
+      ...results.slice(0, 30).map((r: any) => ({ type: 'TextBlock', text: r.name, wrap: true })),
+    ],
+  } as const;
+  return { results, ui: { adaptiveCard: card } };
 }
 
 async function handleSearchPages(params: any) {
-  // ... unchanged logic ...
+  const baseUrl = process.env.CONFLUENCE_BASE_URL;
+  const email = process.env.CONFLUENCE_EMAIL;
+  const token = process.env.CONFLUENCE_API_TOKEN;
+  if (!baseUrl || !email || !token) {
+    return toolError(
+      'MISSING_CREDENTIALS',
+      'Missing Confluence credentials. Set CONFLUENCE_BASE_URL, CONFLUENCE_EMAIL, and CONFLUENCE_API_TOKEN.'
+    );
+  }
+  const query = String((params?.query ?? params?.q ?? params?.text ?? params?.question) || '').trim();
+  const spaceKey = String(params?.spaceKey || '').trim();
+  const limit = Math.min(Math.max(Number(params?.limit) || 10, 1), 100);
+  if (!query) {
+    return toolError('MISSING_INPUT', 'Missing required input: query', { missing: ['query'] });
+  }
+  let esc = query.replace(/[\x00-\x1F]/g, '');
+  if (!esc || !esc.replace(/\s+/g, '')) esc = 'search';
+  let cqlText: string;
+  if (esc.startsWith('"') && esc.endsWith('"')) {
+    const phrase = esc.replace(/"/g, '');
+    cqlText = `text ~ "\\\"${phrase.slice(1, -1)}\\\""`;
+  } else if (/\s/.test(esc)) {
+    cqlText = `text ~ "\\\"${esc}\\\""`;
+  } else {
+    cqlText = `text ~ "${esc}"`;
+  }
+  const parts = ['type=page', cqlText];
+  if (spaceKey) parts.push(`space=${encodeURIComponent(spaceKey)}`);
+  const cql = parts.join(' and ') + ' ORDER BY score desc, lastmodified desc';
+  const authHeader = 'Basic ' + Buffer.from(`${email}:${token}`).toString('base64');
+  const url = `${baseUrl.replace(/\/$/, '')}/wiki/rest/api/search?cql=${encodeURIComponent(cql)}&limit=${limit}`;
+  const res = await httpFetch(url, { headers: { Authorization: authHeader, Accept: 'application/json' } });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    return toolError('UPSTREAM_ERROR', `Confluence API ${res.status}: ${text || res.statusText}`, { cql });
+  }
+  const data = await res.json();
+  const base = baseUrl.replace(/\/$/, '');
+  const results = (data?.results || []).map((r: any) => {
+    const id = r?.content?.id || r?.id;
+    const title = r?.title || r?.content?.title;
+    const webui = r?.content?._links?.webui ?? r?._links?.webui ?? '';
+    const excerpt = (r?.excerpt || '').toString();
+    let url = '';
+    if (webui) {
+      url = base + '/wiki' + webui;
+    } else if (typeof r?.url === 'string' && /^https?:\/\//.test(r.url)) {
+      url = r.url;
+    }
+    return { id, title, url, excerpt };
+  });
+  const card = {
+    type: 'AdaptiveCard',
+    $schema: 'http://adaptivecards.io/schemas/adaptive-card.json',
+    version: '1.5',
+    body: [
+      { type: 'TextBlock', text: `Search results for "${query}"${spaceKey ? ` in space ${spaceKey}` : ''}` as string, weight: 'Bolder', size: 'Medium', wrap: true },
+      ...results
+        .slice(0, 15)
+        .map((r: any) => ({ type: 'TextBlock', text: `${r.title}\n${r.url}${r.excerpt ? `\n${r.excerpt}` : ''}`, wrap: true })),
+    ],
+    actions: results.slice(0, 5).map((r: any) => ({ type: 'Action.OpenUrl', title: r.title, url: r.url })),
+  } as const;
+  return { cql, results, ui: { adaptiveCard: card } };
 }
 
 async function handleDescribeTools(_params: any) {
