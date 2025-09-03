@@ -232,7 +232,7 @@ async function handleSearchByLabelInSpace(params: any) {
     version: '1.5',
     body: [
       { type: 'TextBlock', text: `Results for label "${label}" in space ${spaceKey}`, weight: 'Bolder', size: 'Medium', wrap: true },
-      ...results.slice(0, 15).map((r: any) => ({ type: 'TextBlock', text: `${r.title}\n${r.url}`, wrap: true })),
+  ...results.slice(0, 50).map((r: any) => ({ type: 'TextBlock', text: `${r.title}\n${r.url}`, wrap: true })),
     ],
   } as const;
   return { cql, results, pagination, ui: { adaptiveCard: card } };
@@ -278,7 +278,7 @@ async function handleListSpaces(params: any) {
     version: '1.5',
     body: [
       { type: 'TextBlock', text: `Spaces (max ${limit})`, weight: 'Bolder', size: 'Medium', wrap: true },
-      ...results.slice(0, 15).map((r: any) => ({ type: 'TextBlock', text: `${r.key} — ${r.name}\n${r.url}`, wrap: true })),
+  ...results.slice(0, 50).map((r: any) => ({ type: 'TextBlock', text: `${r.key} — ${r.name}\n${r.url}`, wrap: true })),
     ],
   } as const;
   return { results, pagination, ui: { adaptiveCard: card } };
@@ -364,7 +364,7 @@ async function handleListPagesInSpace(params: any) {
     version: '1.5',
     body: [
       { type: 'TextBlock', text: `Pages in ${spaceKey} (max ${limit})`, weight: 'Bolder', size: 'Medium', wrap: true },
-      ...results.slice(0, 15).map((r: any) => ({ type: 'TextBlock', text: `${r.title}\n${r.url}`, wrap: true })),
+  ...results.slice(0, 50).map((r: any) => ({ type: 'TextBlock', text: `${r.title}\n${r.url}`, wrap: true })),
     ],
   } as const;
   return { cql, results, pagination: pagination2, ui: { adaptiveCard: card } };
@@ -413,7 +413,7 @@ async function handleListLabels(params: any) {
     version: '1.5',
     body: [
       { type: 'TextBlock', text: `Labels${prefix ? ` with prefix "${prefix}"` : ''} (max ${limit})`, weight: 'Bolder', size: 'Medium', wrap: true },
-      ...results.slice(0, 30).map((r: any) => ({ type: 'TextBlock', text: r.name, wrap: true })),
+  ...results.slice(0, 50).map((r: any) => ({ type: 'TextBlock', text: r.name, wrap: true })),
     ],
   } as const;
   return { results, pagination, ui: { adaptiveCard: card } };
