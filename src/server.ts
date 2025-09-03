@@ -37,12 +37,12 @@ function getToolDescriptors() {
         properties: {
           query: { type: 'string', description: 'Free-text query to search in page titles and content' },
           spaceKey: { type: 'string', description: 'Optional Confluence space key to restrict the search' },
-          limit: { type: 'number', description: 'Page size per request (default 25, max 100; service may cap to 50)' },
+          limit: { type: 'number', description: 'Page size per request (default 50, max 100; service may cap to 50)' },
           start: { type: 'number', description: 'Offset index for pagination (ignored when cursor is provided)' },
           cursor: { type: 'string', description: 'Opaque cursor from a previous response for next/prev page' },
           includeArchivedSpaces: { type: 'boolean', description: 'Include archived spaces in results' },
-          maxResults: { type: 'number', description: 'When set, auto-paginates until this many results are collected (max 200)' },
-          autoPaginate: { type: 'boolean', description: 'If true, auto-paginates using cursor until maxResults or no next page' },
+          maxResults: { type: 'number', description: 'When set, auto-paginates until this many results are collected (omit for full traversal)' },
+          autoPaginate: { type: 'boolean', description: 'Defaults to true. Auto-paginates using cursor until maxResults or no next page' },
         },
         required: ['query'],
         additionalProperties: false,
@@ -57,12 +57,12 @@ function getToolDescriptors() {
         properties: {
           query: { type: 'string', description: 'Free-text query to search in page titles and content' },
           spaceKey: { type: 'string', description: 'Optional Confluence space key to restrict the search' },
-          limit: { type: 'number', description: 'Page size per request (default 25, max 100; service may cap to 50)' },
+          limit: { type: 'number', description: 'Page size per request (default 50, max 100; service may cap to 50)' },
           start: { type: 'number', description: 'Offset index for pagination (ignored when cursor is provided)' },
           cursor: { type: 'string', description: 'Opaque cursor from a previous response for next/prev page' },
           includeArchivedSpaces: { type: 'boolean', description: 'Include archived spaces in results' },
-          maxResults: { type: 'number', description: 'When set, auto-paginates until this many results are collected (max 200)' },
-          autoPaginate: { type: 'boolean', description: 'If true, auto-paginates using cursor until maxResults or no next page' },
+          maxResults: { type: 'number', description: 'When set, auto-paginates until this many results are collected (omit for full traversal)' },
+          autoPaginate: { type: 'boolean', description: 'Defaults to true. Auto-paginates using cursor until maxResults or no next page' },
         },
         required: ['query'],
         additionalProperties: false,
@@ -77,11 +77,11 @@ function getToolDescriptors() {
         properties: {
           label: { type: 'string', description: 'Confluence label (e.g., administration)' },
           spaceKey: { type: 'string', description: 'Space key (e.g., DOC)' },
-          limit: { type: 'number', description: 'Page size per request (default 25, max 100; service may cap to 50)' },
+          limit: { type: 'number', description: 'Page size per request (default 50, max 100; service may cap to 50)' },
           start: { type: 'number', description: 'Offset index for pagination (ignored when cursor is provided)' },
           cursor: { type: 'string', description: 'Opaque cursor from a previous response for next/prev page' },
-          maxResults: { type: 'number', description: 'When set, auto-paginates until this many results are collected (max 200)' },
-          autoPaginate: { type: 'boolean', description: 'If true, auto-paginates using cursor until maxResults or no next page' },
+          maxResults: { type: 'number', description: 'When set, auto-paginates until this many results are collected (omit for full traversal)' },
+          autoPaginate: { type: 'boolean', description: 'Defaults to true. Auto-paginates using cursor until maxResults or no next page' },
         },
         required: ['label', 'spaceKey'],
         additionalProperties: false,
@@ -120,11 +120,11 @@ function getToolDescriptors() {
         type: 'object',
         properties: {
           spaceKey: { type: 'string', description: 'Space key (e.g., DOC)' },
-          limit: { type: 'number', description: 'Max results (default 25, max 100)' },
+          limit: { type: 'number', description: 'Page size per request (default 50, max 100; service may cap to 50)' },
           start: { type: 'number', description: 'Offset index for pagination (ignored when cursor is provided)' },
           cursor: { type: 'string', description: 'Opaque cursor from a previous response for next/prev page' },
-          maxResults: { type: 'number', description: 'When set, auto-paginates until this many results are collected (max 200)' },
-          autoPaginate: { type: 'boolean', description: 'If true, auto-paginates using cursor until maxResults or no next page' },
+          maxResults: { type: 'number', description: 'When set, auto-paginates until this many results are collected (omit for full traversal)' },
+          autoPaginate: { type: 'boolean', description: 'Defaults to true. Auto-paginates using cursor until maxResults or no next page' },
         },
         required: ['spaceKey'],
         additionalProperties: false,
@@ -157,11 +157,11 @@ async function handleSearchByLabelInSpace(params: any) {
 
   const label = String(params?.label || '').trim();
   const spaceKey = String(params?.spaceKey || '').trim();
-  const limit = Math.min(Math.max(Number(params?.limit) || 25, 1), 100);
+  const limit = Math.min(Math.max(Number(params?.limit) || 50, 1), 100);
   const start = Number(params?.start);
   const cursor = String(params?.cursor || '').trim();
-  const maxResults = Math.min(Math.max(Number(params?.maxResults) || 0, 0), 200);
-  const autoPaginate = Boolean(params?.autoPaginate) || maxResults > 0;
+  const maxResults = Math.max(Number.isFinite(Number(params?.maxResults)) ? Number(params?.maxResults) : 0, 0);
+  const autoPaginate = params?.autoPaginate !== false || maxResults > 0;
   if (!label || !spaceKey) {
     const missing: string[] = [];
     if (!label) missing.push('label');
@@ -208,7 +208,7 @@ async function handleSearchByLabelInSpace(params: any) {
       ? decodeURIComponent((links.next.match(/[?&]cursor=([^&]+)/) || [])[1] || '')
       : '';
     pageCount++;
-  } while (autoPaginate && nextCursor && (maxResults === 0 || collected.length < maxResults) && pageCount < 10);
+  } while (autoPaginate && nextCursor && (maxResults === 0 || collected.length < maxResults) && pageCount < 20);
   const results = maxResults > 0 ? collected.slice(0, maxResults) : collected;
   const data = firstPage || { start: start || 0, limit, size: results.length, _links: {} };
   const links = (data?._links || {}) as any;
@@ -248,7 +248,7 @@ async function handleListSpaces(params: any) {
       'Missing Confluence credentials. Set CONFLUENCE_BASE_URL, CONFLUENCE_EMAIL, and CONFLUENCE_API_TOKEN.'
     );
   }
-  const limit = Math.min(Math.max(Number(params?.limit) || 25, 1), 100);
+  const limit = Math.min(Math.max(Number(params?.limit) || 50, 1), 100);
   const start = Number(params?.start);
   const authHeader = 'Basic ' + Buffer.from(`${email}:${token}`).toString('base64');
   const qs = new URLSearchParams({ limit: String(limit) });
@@ -295,11 +295,11 @@ async function handleListPagesInSpace(params: any) {
     );
   }
   const spaceKey = String(params?.spaceKey || '').trim();
-  const limit = Math.min(Math.max(Number(params?.limit) || 25, 1), 100);
+  const limit = Math.min(Math.max(Number(params?.limit) || 50, 1), 100);
   const start = Number(params?.start);
   const cursor = String(params?.cursor || '').trim();
-  const maxResults = Math.min(Math.max(Number(params?.maxResults) || 0, 0), 200);
-  const autoPaginate = Boolean(params?.autoPaginate) || maxResults > 0;
+  const maxResults = Math.max(Number.isFinite(Number(params?.maxResults)) ? Number(params?.maxResults) : 0, 0);
+  const autoPaginate = params?.autoPaginate !== false || maxResults > 0;
   if (!spaceKey) {
     return toolError('MISSING_INPUT', 'Missing required input: spaceKey', { missing: ['spaceKey'] });
   }
@@ -340,7 +340,7 @@ async function handleListPagesInSpace(params: any) {
       ? decodeURIComponent((links2.next.match(/[?&]cursor=([^&]+)/) || [])[1] || '')
       : '';
     pageCount++;
-  } while (autoPaginate && nextCursor && (maxResults === 0 || collected.length < maxResults) && pageCount < 10);
+  } while (autoPaginate && nextCursor && (maxResults === 0 || collected.length < maxResults) && pageCount < 20);
   const results = maxResults > 0 ? collected.slice(0, maxResults) : collected;
   const data = firstPage || { start: start || 0, limit, size: results.length, _links: {} };
   const links2 = (data?._links || {}) as any;
@@ -435,8 +435,8 @@ async function handleSearchPages(params: any) {
   const start = Number(params?.start);
   const cursor = String(params?.cursor || '').trim();
   const includeArchivedSpaces = Boolean(params?.includeArchivedSpaces);
-  const maxResults = Math.min(Math.max(Number(params?.maxResults) || 0, 0), 200);
-  const autoPaginate = Boolean(params?.autoPaginate) || maxResults > 0;
+  const maxResults = Math.max(Number.isFinite(Number(params?.maxResults)) ? Number(params?.maxResults) : 0, 0);
+  const autoPaginate = params?.autoPaginate !== false || maxResults > 0;
   if (!query) {
     return toolError('MISSING_INPUT', 'Missing required input: query', { missing: ['query'] });
   }
@@ -501,7 +501,7 @@ async function handleSearchPages(params: any) {
       ? decodeURIComponent((links.next.match(/[?&]cursor=([^&]+)/) || [])[1] || '')
       : '';
     pageCount++;
-  } while (autoPaginate && nextCursor && (maxResults === 0 || collected.length < maxResults) && pageCount < 10);
+  } while (autoPaginate && nextCursor && (maxResults === 0 || collected.length < maxResults) && pageCount < 20);
   const results = maxResults > 0 ? collected.slice(0, maxResults) : collected;
   const data = firstPage || { start: start || 0, limit, size: results.length, _links: {} };
   const links = (data?._links || {}) as any;
