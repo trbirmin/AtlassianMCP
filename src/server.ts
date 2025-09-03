@@ -71,7 +71,7 @@ function getToolDescriptors() {
     {
       name: 'searchByLabelInSpace',
       description:
-  'Search pages by label within a space, sorted by latest modified; returns up to limit results (default 50).',
+        'Search pages by label within a space, sorted by latest modified; returns up to limit results (default 10).',
       inputSchema: {
         type: 'object',
         properties: {
@@ -103,11 +103,11 @@ function getToolDescriptors() {
     },
     {
       name: 'listSpaces',
-    description: 'List Confluence spaces (global). Returns up to limit spaces (default 50).',
+      description: 'List Confluence spaces (global). Returns up to limit spaces (default 25).',
       inputSchema: {
         type: 'object',
         properties: {
-      limit: { type: 'number', description: 'Max spaces to return (default 50, max 100)' },
+          limit: { type: 'number', description: 'Max spaces to return (default 25, max 100)' },
           start: { type: 'number', description: 'Offset index for pagination' },
         },
         additionalProperties: false,
@@ -232,7 +232,7 @@ async function handleSearchByLabelInSpace(params: any) {
     version: '1.5',
     body: [
       { type: 'TextBlock', text: `Results for label "${label}" in space ${spaceKey}`, weight: 'Bolder', size: 'Medium', wrap: true },
-  ...results.slice(0, 50).map((r: any) => ({ type: 'TextBlock', text: `${r.title}\n${r.url}`, wrap: true })),
+      ...results.slice(0, 15).map((r: any) => ({ type: 'TextBlock', text: `${r.title}\n${r.url}`, wrap: true })),
     ],
   } as const;
   return { cql, results, pagination, ui: { adaptiveCard: card } };
@@ -278,7 +278,7 @@ async function handleListSpaces(params: any) {
     version: '1.5',
     body: [
       { type: 'TextBlock', text: `Spaces (max ${limit})`, weight: 'Bolder', size: 'Medium', wrap: true },
-  ...results.slice(0, 50).map((r: any) => ({ type: 'TextBlock', text: `${r.key} — ${r.name}\n${r.url}`, wrap: true })),
+      ...results.slice(0, 15).map((r: any) => ({ type: 'TextBlock', text: `${r.key} — ${r.name}\n${r.url}`, wrap: true })),
     ],
   } as const;
   return { results, pagination, ui: { adaptiveCard: card } };
@@ -364,7 +364,7 @@ async function handleListPagesInSpace(params: any) {
     version: '1.5',
     body: [
       { type: 'TextBlock', text: `Pages in ${spaceKey} (max ${limit})`, weight: 'Bolder', size: 'Medium', wrap: true },
-  ...results.slice(0, 50).map((r: any) => ({ type: 'TextBlock', text: `${r.title}\n${r.url}`, wrap: true })),
+      ...results.slice(0, 15).map((r: any) => ({ type: 'TextBlock', text: `${r.title}\n${r.url}`, wrap: true })),
     ],
   } as const;
   return { cql, results, pagination: pagination2, ui: { adaptiveCard: card } };
@@ -413,7 +413,7 @@ async function handleListLabels(params: any) {
     version: '1.5',
     body: [
       { type: 'TextBlock', text: `Labels${prefix ? ` with prefix "${prefix}"` : ''} (max ${limit})`, weight: 'Bolder', size: 'Medium', wrap: true },
-  ...results.slice(0, 50).map((r: any) => ({ type: 'TextBlock', text: r.name, wrap: true })),
+      ...results.slice(0, 30).map((r: any) => ({ type: 'TextBlock', text: r.name, wrap: true })),
     ],
   } as const;
   return { results, pagination, ui: { adaptiveCard: card } };
@@ -431,7 +431,7 @@ async function handleSearchPages(params: any) {
   }
   const query = String((params?.query ?? params?.q ?? params?.text ?? params?.question) || '').trim();
   const spaceKey = String(params?.spaceKey || '').trim();
-  const limit = Math.min(Math.max(Number(params?.limit) || 50, 1), 100);
+  const limit = Math.min(Math.max(Number(params?.limit) || 25, 1), 100);
   const start = Number(params?.start);
   const cursor = String(params?.cursor || '').trim();
   const includeArchivedSpaces = Boolean(params?.includeArchivedSpaces);
@@ -526,10 +526,10 @@ async function handleSearchPages(params: any) {
     body: [
       { type: 'TextBlock', text: `Search results for "${query}"${spaceKey ? ` in space ${spaceKey}` : ''}` as string, weight: 'Bolder', size: 'Medium', wrap: true },
       ...results
-        .slice(0, 50)
+        .slice(0, 15)
         .map((r: any) => ({ type: 'TextBlock', text: `${r.title}\n${r.url}${r.excerpt ? `\n${r.excerpt}` : ''}`, wrap: true })),
     ],
-    actions: results.slice(0, 10).map((r: any) => ({ type: 'Action.OpenUrl', title: r.title, url: r.url })),
+    actions: results.slice(0, 5).map((r: any) => ({ type: 'Action.OpenUrl', title: r.title, url: r.url })),
   } as const;
   return { cql, results, pagination, ui: { adaptiveCard: card } };
 }
