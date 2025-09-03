@@ -682,7 +682,50 @@ const mcpHandler = async (req: Request, res: Response) => {
       default:
         return sendJson(res, { jsonrpc: '2.0', id, error: { code: -32601, message: `Tool not found: ${name}` } });
     }
-    return sendJson(res, { jsonrpc: '2.0', id, result: out });
+    // Build MCP-compatible content array so hosts can render results (text fallback + adaptive card JSON)
+    const lines: string[] = [];
+    try {
+      if (name === 'search' || name === 'searchPages' || name === 'listPagesInSpace' || name === 'searchByLabelInSpace') {
+        const hdr = name === 'listPagesInSpace'
+          ? `Pages${args?.spaceKey ? ` in ${args.spaceKey}` : ''}`
+          : `Search${args?.spaceKey ? ` in ${args.spaceKey}` : ''}${args?.query ? `: ${args.query}` : args?.label ? ` label: ${args.label}` : ''}`;
+        lines.push(hdr);
+        const arr = Array.isArray(out?.results) ? out.results : [];
+        arr.slice(0, 50).forEach((r: any, i: number) => {
+          const title = r?.title || r?.name || r?.key || `Result ${i + 1}`;
+          const url = r?.url || '';
+          const excerpt = r?.excerpt ? `\n${r.excerpt}` : '';
+          lines.push(`${i + 1}. ${title}${url ? `\n${url}` : ''}${excerpt}`);
+        });
+        if (out?.pagination?.nextCursor) {
+          lines.push(`More results available. nextCursor: ${out.pagination.nextCursor}`);
+        }
+      } else if (name === 'listSpaces') {
+        lines.push('Spaces');
+        const arr = Array.isArray(out?.results) ? out.results : [];
+        arr.slice(0, 50).forEach((r: any, i: number) => {
+          lines.push(`${i + 1}. ${r?.key ?? ''} — ${r?.name ?? ''}${r?.url ? `\n${r.url}` : ''}`);
+        });
+      } else if (name === 'listLabels') {
+        lines.push(`Labels${args?.prefix ? ` with prefix "${args.prefix}"` : ''}`);
+        const arr = Array.isArray(out?.results) ? out.results : [];
+        arr.slice(0, 50).forEach((r: any, i: number) => {
+          lines.push(`${i + 1}. ${typeof r === 'string' ? r : r?.name ?? ''}`);
+        });
+      } else if (name === 'describeTools') {
+        lines.push('Available MCP tools:');
+        const tools = Array.isArray(out?.tools) ? out.tools : [];
+        tools.forEach((t: any) => lines.push(`- ${t.name}: ${t.description}`));
+      }
+    } catch (_) {
+      // ignore text fallback failure
+    }
+    const content: any[] = [];
+    if (lines.length) content.push({ type: 'text', text: lines.join('\n\n') });
+    if (out?.ui?.adaptiveCard) content.push({ type: 'json', data: { adaptiveCard: out.ui.adaptiveCard } });
+
+    const result = { ...out, content };
+    return sendJson(res, { jsonrpc: '2.0', id, result });
   }
 
   if (norm === 'ping' || norm === 'mcp/ping') {
