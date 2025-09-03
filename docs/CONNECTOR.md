@@ -4,7 +4,7 @@ This guide walks you end-to-end: deploy to Azure App Service with GitHub Actions
 
 ## 1) Deploy to Azure App Service
 
-Prereqs
+Prerequisites
 - Azure subscription with RBAC to create a Web App and assign roles
 - GitHub repository for this code
 
