@@ -226,18 +226,14 @@ async function handleSearchByLabelInSpace(params: any) {
     nextUrl: links?.next ? (base + links.next) : undefined,
     prevUrl: links?.prev ? (base + links.prev) : undefined,
   } as const;
-  const labelBody: any[] = [
-      { type: 'TextBlock', text: `Results for label "${label}" in space ${spaceKey}`, weight: 'Bolder', size: 'Medium', wrap: true },
-      ...results.slice(0, 50).map((r: any) => ({ type: 'TextBlock', text: `${r.title}\n${r.url}`, wrap: true })),
-  ];
-  if (pagination.nextCursor) {
-    labelBody.push({ type: 'TextBlock', text: `More results available. nextCursor: ${pagination.nextCursor}`, wrap: true, size: 'Small', isSubtle: true });
-  }
   const card = {
     type: 'AdaptiveCard',
     $schema: 'http://adaptivecards.io/schemas/adaptive-card.json',
     version: '1.5',
-    body: labelBody,
+    body: [
+      { type: 'TextBlock', text: `Results for label "${label}" in space ${spaceKey}`, weight: 'Bolder', size: 'Medium', wrap: true },
+  ...results.slice(0, 50).map((r: any) => ({ type: 'TextBlock', text: `${r.title}\n${r.url}`, wrap: true })),
+    ],
   } as const;
   return { cql, results, pagination, ui: { adaptiveCard: card } };
 }
@@ -362,18 +358,14 @@ async function handleListPagesInSpace(params: any) {
     nextUrl: links2?.next ? (base + links2.next) : undefined,
     prevUrl: links2?.prev ? (base + links2.prev) : undefined,
   } as const;
-  const listBody: any[] = [
-      { type: 'TextBlock', text: `Pages in ${spaceKey} (max ${limit})`, weight: 'Bolder', size: 'Medium', wrap: true },
-      ...results.slice(0, 50).map((r: any) => ({ type: 'TextBlock', text: `${r.title}\n${r.url}`, wrap: true })),
-  ];
-  if (pagination2.nextCursor) {
-    listBody.push({ type: 'TextBlock', text: `More results available. nextCursor: ${pagination2.nextCursor}`, wrap: true, size: 'Small', isSubtle: true });
-  }
   const card = {
     type: 'AdaptiveCard',
     $schema: 'http://adaptivecards.io/schemas/adaptive-card.json',
     version: '1.5',
-    body: listBody,
+    body: [
+      { type: 'TextBlock', text: `Pages in ${spaceKey} (max ${limit})`, weight: 'Bolder', size: 'Medium', wrap: true },
+  ...results.slice(0, 50).map((r: any) => ({ type: 'TextBlock', text: `${r.title}\n${r.url}`, wrap: true })),
+    ],
   } as const;
   return { cql, results, pagination: pagination2, ui: { adaptiveCard: card } };
 }
@@ -527,20 +519,16 @@ async function handleSearchPages(params: any) {
     nextUrl: links?.next ? (base + links.next) : undefined,
     prevUrl: links?.prev ? (base + links.prev) : undefined,
   } as const;
-  const searchBody: any[] = [
-      { type: 'TextBlock', text: `Search results for "${query}"${spaceKey ? ` in space ${spaceKey}` : ''}` as string, weight: 'Bolder', size: 'Medium', wrap: true },
-      ...results
-        .slice(0, 50)
-        .map((r: any) => ({ type: 'TextBlock', text: `${r.title}\n${r.url}${r.excerpt ? `\n${r.excerpt}` : ''}`, wrap: true })),
-  ];
-  if (pagination.nextCursor) {
-    searchBody.push({ type: 'TextBlock', text: `More results available. nextCursor: ${pagination.nextCursor}`, wrap: true, size: 'Small', isSubtle: true });
-  }
   const card = {
     type: 'AdaptiveCard',
     $schema: 'http://adaptivecards.io/schemas/adaptive-card.json',
     version: '1.5',
-    body: searchBody,
+    body: [
+      { type: 'TextBlock', text: `Search results for "${query}"${spaceKey ? ` in space ${spaceKey}` : ''}` as string, weight: 'Bolder', size: 'Medium', wrap: true },
+      ...results
+        .slice(0, 50)
+        .map((r: any) => ({ type: 'TextBlock', text: `${r.title}\n${r.url}${r.excerpt ? `\n${r.excerpt}` : ''}`, wrap: true })),
+    ],
     actions: results.slice(0, 10).map((r: any) => ({ type: 'Action.OpenUrl', title: r.title, url: r.url })),
   } as const;
   return { cql, results, pagination, ui: { adaptiveCard: card } };
