@@ -226,16 +226,7 @@ async function handleSearchByLabelInSpace(params: any) {
     nextUrl: links?.next ? (base + links.next) : undefined,
     prevUrl: links?.prev ? (base + links.prev) : undefined,
   } as const;
-  const card = {
-    type: 'AdaptiveCard',
-    $schema: 'http://adaptivecards.io/schemas/adaptive-card.json',
-    version: '1.5',
-    body: [
-      { type: 'TextBlock', text: `Results for label "${label}" in space ${spaceKey}`, weight: 'Bolder', size: 'Medium', wrap: true },
-      ...results.slice(0, 15).map((r: any) => ({ type: 'TextBlock', text: `${r.title}\n${r.url}`, wrap: true })),
-    ],
-  } as const;
-  return { cql, results, pagination, ui: { adaptiveCard: card } };
+  return { cql, results, pagination };
 }
 
 async function handleListSpaces(params: any) {
@@ -272,16 +263,7 @@ async function handleListSpaces(params: any) {
     size: data?.size ?? (results?.length ?? 0),
     _links: data?._links,
   } as const;
-  const card = {
-    type: 'AdaptiveCard',
-    $schema: 'http://adaptivecards.io/schemas/adaptive-card.json',
-    version: '1.5',
-    body: [
-      { type: 'TextBlock', text: `Spaces (max ${limit})`, weight: 'Bolder', size: 'Medium', wrap: true },
-      ...results.slice(0, 15).map((r: any) => ({ type: 'TextBlock', text: `${r.key} — ${r.name}\n${r.url}`, wrap: true })),
-    ],
-  } as const;
-  return { results, pagination, ui: { adaptiveCard: card } };
+  return { results, pagination };
 }
 
 async function handleListPagesInSpace(params: any) {
@@ -358,16 +340,7 @@ async function handleListPagesInSpace(params: any) {
     nextUrl: links2?.next ? (base + links2.next) : undefined,
     prevUrl: links2?.prev ? (base + links2.prev) : undefined,
   } as const;
-  const card = {
-    type: 'AdaptiveCard',
-    $schema: 'http://adaptivecards.io/schemas/adaptive-card.json',
-    version: '1.5',
-    body: [
-      { type: 'TextBlock', text: `Pages in ${spaceKey} (max ${limit})`, weight: 'Bolder', size: 'Medium', wrap: true },
-      ...results.slice(0, 15).map((r: any) => ({ type: 'TextBlock', text: `${r.title}\n${r.url}`, wrap: true })),
-    ],
-  } as const;
-  return { cql, results, pagination: pagination2, ui: { adaptiveCard: card } };
+  return { cql, results, pagination: pagination2 };
 }
 
 async function handleListLabels(params: any) {
@@ -407,16 +380,7 @@ async function handleListLabels(params: any) {
     size: data?.size ?? (results?.length ?? 0),
     _links: data?._links,
   } as const;
-  const card = {
-    type: 'AdaptiveCard',
-    $schema: 'http://adaptivecards.io/schemas/adaptive-card.json',
-    version: '1.5',
-    body: [
-      { type: 'TextBlock', text: `Labels${prefix ? ` with prefix "${prefix}"` : ''} (max ${limit})`, weight: 'Bolder', size: 'Medium', wrap: true },
-      ...results.slice(0, 30).map((r: any) => ({ type: 'TextBlock', text: r.name, wrap: true })),
-    ],
-  } as const;
-  return { results, pagination, ui: { adaptiveCard: card } };
+  return { results, pagination };
 }
 
 async function handleSearchPages(params: any) {
@@ -519,33 +483,12 @@ async function handleSearchPages(params: any) {
     nextUrl: links?.next ? (base + links.next) : undefined,
     prevUrl: links?.prev ? (base + links.prev) : undefined,
   } as const;
-  const card = {
-    type: 'AdaptiveCard',
-    $schema: 'http://adaptivecards.io/schemas/adaptive-card.json',
-    version: '1.5',
-    body: [
-      { type: 'TextBlock', text: `Search results for "${query}"${spaceKey ? ` in space ${spaceKey}` : ''}` as string, weight: 'Bolder', size: 'Medium', wrap: true },
-      ...results
-        .slice(0, 15)
-        .map((r: any) => ({ type: 'TextBlock', text: `${r.title}\n${r.url}${r.excerpt ? `\n${r.excerpt}` : ''}`, wrap: true })),
-    ],
-    actions: results.slice(0, 5).map((r: any) => ({ type: 'Action.OpenUrl', title: r.title, url: r.url })),
-  } as const;
-  return { cql, results, pagination, ui: { adaptiveCard: card } };
+  return { cql, results, pagination };
 }
 
 async function handleDescribeTools(_params: any) {
   const tools = getToolDescriptors();
-  const card = {
-    type: 'AdaptiveCard',
-    $schema: 'http://adaptivecards.io/schemas/adaptive-card.json',
-    version: '1.5',
-    body: [
-      { type: 'TextBlock', text: 'Available MCP tools', weight: 'Bolder', size: 'Medium', wrap: true },
-      ...tools.map((t: any) => ({ type: 'TextBlock', text: `${t.name}: ${t.description}`, wrap: true })),
-    ],
-  };
-  return { tools, ui: { adaptiveCard: card } };
+  return { tools };
 }
 
 // === App setup ===
