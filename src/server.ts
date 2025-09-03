@@ -588,9 +588,9 @@ if (allowedOrigins.length > 0) {
 
 app.use(express.json({ limit: '1mb' }));
 
-// Handle raw text for MCP clients (accept both JSON and text)
+// Handle raw text for MCP clients
 const mcpPaths = ['/mcp', '/:connectionId/mcp', '/apim/:apiName/:connectionId/mcp', '/apim/:apiName/mcp'];
-app.use(mcpPaths, express.text({ type: ['text/*', 'application/json', 'application/*+json'], limit: '1mb' }));
+app.use(mcpPaths, express.text({ type: '*/*', limit: '1mb' }));
 
 // Access log
 app.use(morgan('combined'));
@@ -598,16 +598,7 @@ app.use(morgan('combined'));
 // === JSON-RPC handler ===
 const mcpHandler = async (req: Request, res: Response) => {
   const raw = (req as any).body;
-  let msg: any;
-  if (typeof raw === 'string') {
-    try {
-      msg = JSON.parse(raw);
-    } catch (e) {
-      return sendJson(res, { jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Parse error: invalid JSON' } });
-    }
-  } else {
-    msg = raw || {};
-  }
+  const msg = typeof raw === 'string' ? (() => { try { return JSON.parse(raw); } catch { return {}; } })() : (raw || {});
   const id = msg.id;
   const method = typeof msg.method === 'string' ? msg.method : '';
   const norm = method.toLowerCase().replace(/[._]/g, '/');
@@ -682,50 +673,7 @@ const mcpHandler = async (req: Request, res: Response) => {
       default:
         return sendJson(res, { jsonrpc: '2.0', id, error: { code: -32601, message: `Tool not found: ${name}` } });
     }
-    // Build MCP-compatible content array so hosts can render results (text fallback + adaptive card JSON)
-    const lines: string[] = [];
-    try {
-      if (name === 'search' || name === 'searchPages' || name === 'listPagesInSpace' || name === 'searchByLabelInSpace') {
-        const hdr = name === 'listPagesInSpace'
-          ? `Pages${args?.spaceKey ? ` in ${args.spaceKey}` : ''}`
-          : `Search${args?.spaceKey ? ` in ${args.spaceKey}` : ''}${args?.query ? `: ${args.query}` : args?.label ? ` label: ${args.label}` : ''}`;
-        lines.push(hdr);
-        const arr = Array.isArray(out?.results) ? out.results : [];
-        arr.slice(0, 50).forEach((r: any, i: number) => {
-          const title = r?.title || r?.name || r?.key || `Result ${i + 1}`;
-          const url = r?.url || '';
-          const excerpt = r?.excerpt ? `\n${r.excerpt}` : '';
-          lines.push(`${i + 1}. ${title}${url ? `\n${url}` : ''}${excerpt}`);
-        });
-        if (out?.pagination?.nextCursor) {
-          lines.push(`More results available. nextCursor: ${out.pagination.nextCursor}`);
-        }
-      } else if (name === 'listSpaces') {
-        lines.push('Spaces');
-        const arr = Array.isArray(out?.results) ? out.results : [];
-        arr.slice(0, 50).forEach((r: any, i: number) => {
-          lines.push(`${i + 1}. ${r?.key ?? ''} — ${r?.name ?? ''}${r?.url ? `\n${r.url}` : ''}`);
-        });
-      } else if (name === 'listLabels') {
-        lines.push(`Labels${args?.prefix ? ` with prefix "${args.prefix}"` : ''}`);
-        const arr = Array.isArray(out?.results) ? out.results : [];
-        arr.slice(0, 50).forEach((r: any, i: number) => {
-          lines.push(`${i + 1}. ${typeof r === 'string' ? r : r?.name ?? ''}`);
-        });
-      } else if (name === 'describeTools') {
-        lines.push('Available MCP tools:');
-        const tools = Array.isArray(out?.tools) ? out.tools : [];
-        tools.forEach((t: any) => lines.push(`- ${t.name}: ${t.description}`));
-      }
-    } catch (_) {
-      // ignore text fallback failure
-    }
-    const content: any[] = [];
-    if (lines.length) content.push({ type: 'text', text: lines.join('\n\n') });
-    if (out?.ui?.adaptiveCard) content.push({ type: 'json', data: { adaptiveCard: out.ui.adaptiveCard } });
-
-    const result = { ...out, content };
-    return sendJson(res, { jsonrpc: '2.0', id, result });
+    return sendJson(res, { jsonrpc: '2.0', id, result: out });
   }
 
   if (norm === 'ping' || norm === 'mcp/ping') {
@@ -742,21 +690,11 @@ app.post('/apim/:apiName/mcp', mcpHandler);
 
 // === SSE endpoint ===
 const mcpGetHandler = (req: Request, res: Response) => {
-  const wantsSse = (req.header('Accept') || '').includes('text/event-stream');
-  if (!wantsSse) {
-    // Gracefully acknowledge non-SSE probes instead of 405 to avoid host errors
-    return res.status(200).json({ ok: true, message: 'MCP endpoint. Use POST /mcp for JSON-RPC.' });
+  if (!(req.header('Accept') || '').includes('text/event-stream')) {
+    return res.status(405).send('Method Not Allowed');
   }
-  // Minimal SSE: open stream and send periodic keep-alives
   sseHeaders(res);
-  try {
-    res.write(': connected\n\n');
-  } catch {}
-  const interval = setInterval(() => {
-    try { res.write(': keep-alive\n\n'); } catch {}
-  }, 25000);
-  req.on('close', () => clearInterval(interval));
-  // Keep the connection open
+  res.end();
 };
 app.get('/mcp', mcpGetHandler);
 app.get('/:connectionId/mcp', mcpGetHandler);
