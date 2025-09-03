@@ -37,10 +37,12 @@ function getToolDescriptors() {
         properties: {
           query: { type: 'string', description: 'Free-text query to search in page titles and content' },
           spaceKey: { type: 'string', description: 'Optional Confluence space key to restrict the search' },
-          limit: { type: 'number', description: 'Max results (default 10, max 100)' },
+          limit: { type: 'number', description: 'Page size per request (default 25, max 100; service may cap to 50)' },
           start: { type: 'number', description: 'Offset index for pagination (ignored when cursor is provided)' },
           cursor: { type: 'string', description: 'Opaque cursor from a previous response for next/prev page' },
           includeArchivedSpaces: { type: 'boolean', description: 'Include archived spaces in results' },
+          maxResults: { type: 'number', description: 'When set, auto-paginates until this many results are collected (max 200)' },
+          autoPaginate: { type: 'boolean', description: 'If true, auto-paginates using cursor until maxResults or no next page' },
         },
         required: ['query'],
         additionalProperties: false,
@@ -55,10 +57,12 @@ function getToolDescriptors() {
         properties: {
           query: { type: 'string', description: 'Free-text query to search in page titles and content' },
           spaceKey: { type: 'string', description: 'Optional Confluence space key to restrict the search' },
-          limit: { type: 'number', description: 'Max results (default 10, max 100)' },
+          limit: { type: 'number', description: 'Page size per request (default 25, max 100; service may cap to 50)' },
           start: { type: 'number', description: 'Offset index for pagination (ignored when cursor is provided)' },
           cursor: { type: 'string', description: 'Opaque cursor from a previous response for next/prev page' },
           includeArchivedSpaces: { type: 'boolean', description: 'Include archived spaces in results' },
+          maxResults: { type: 'number', description: 'When set, auto-paginates until this many results are collected (max 200)' },
+          autoPaginate: { type: 'boolean', description: 'If true, auto-paginates using cursor until maxResults or no next page' },
         },
         required: ['query'],
         additionalProperties: false,
@@ -73,9 +77,11 @@ function getToolDescriptors() {
         properties: {
           label: { type: 'string', description: 'Confluence label (e.g., administration)' },
           spaceKey: { type: 'string', description: 'Space key (e.g., DOC)' },
-          limit: { type: 'number', description: 'Max results (default 10, max 100)' },
+          limit: { type: 'number', description: 'Page size per request (default 25, max 100; service may cap to 50)' },
           start: { type: 'number', description: 'Offset index for pagination (ignored when cursor is provided)' },
           cursor: { type: 'string', description: 'Opaque cursor from a previous response for next/prev page' },
+          maxResults: { type: 'number', description: 'When set, auto-paginates until this many results are collected (max 200)' },
+          autoPaginate: { type: 'boolean', description: 'If true, auto-paginates using cursor until maxResults or no next page' },
         },
         required: ['label', 'spaceKey'],
         additionalProperties: false,
@@ -117,6 +123,8 @@ function getToolDescriptors() {
           limit: { type: 'number', description: 'Max results (default 25, max 100)' },
           start: { type: 'number', description: 'Offset index for pagination (ignored when cursor is provided)' },
           cursor: { type: 'string', description: 'Opaque cursor from a previous response for next/prev page' },
+          maxResults: { type: 'number', description: 'When set, auto-paginates until this many results are collected (max 200)' },
+          autoPaginate: { type: 'boolean', description: 'If true, auto-paginates using cursor until maxResults or no next page' },
         },
         required: ['spaceKey'],
         additionalProperties: false,
@@ -149,9 +157,11 @@ async function handleSearchByLabelInSpace(params: any) {
 
   const label = String(params?.label || '').trim();
   const spaceKey = String(params?.spaceKey || '').trim();
-  const limit = Math.min(Math.max(Number(params?.limit) || 10, 1), 100);
+  const limit = Math.min(Math.max(Number(params?.limit) || 25, 1), 100);
   const start = Number(params?.start);
   const cursor = String(params?.cursor || '').trim();
+  const maxResults = Math.min(Math.max(Number(params?.maxResults) || 0, 0), 200);
+  const autoPaginate = Boolean(params?.autoPaginate) || maxResults > 0;
   if (!label || !spaceKey) {
     const missing: string[] = [];
     if (!label) missing.push('label');
@@ -163,18 +173,24 @@ async function handleSearchByLabelInSpace(params: any) {
     spaceKey
   )} ORDER BY lastmodified desc`;
   const authHeader = 'Basic ' + Buffer.from(`${email}:${token}`).toString('base64');
-  const qs = new URLSearchParams({ cql, limit: String(limit) });
-  if (!Number.isNaN(start) && Number.isFinite(start)) qs.set('start', String(start));
-  if (cursor) qs.set('cursor', cursor);
-  const url = `${baseUrl.replace(/\/$/, '')}/wiki/rest/api/search?${qs.toString()}`;
-  const res = await httpFetch(url, { headers: { Authorization: authHeader, Accept: 'application/json' } });
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    return toolError('UPSTREAM_ERROR', `Confluence API ${res.status}: ${text || res.statusText}`);
-  }
-  const data = await res.json();
   const base = baseUrl.replace(/\/$/, '');
-  const results = (data?.results || []).map((r: any) => {
+  const collected: any[] = [];
+  let nextCursor = cursor;
+  let firstPage: any = null;
+  let pageCount = 0;
+  do {
+    const qs = new URLSearchParams({ cql, limit: String(limit) });
+    if (!Number.isNaN(start) && Number.isFinite(start) && !nextCursor) qs.set('start', String(start));
+    if (nextCursor) qs.set('cursor', nextCursor);
+    const url = `${base}/wiki/rest/api/search?${qs.toString()}`;
+    const res = await httpFetch(url, { headers: { Authorization: authHeader, Accept: 'application/json' } });
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      return toolError('UPSTREAM_ERROR', `Confluence API ${res.status}: ${text || res.statusText}`);
+    }
+    const data = await res.json();
+    firstPage = firstPage || data;
+    const pageItems = (data?.results || []).map((r: any) => {
     const id = r?.content?.id || r?.id;
     const title = r?.title || r?.content?.title;
     const webui = r?.content?._links?.webui ?? r?._links?.webui ?? '';
@@ -184,8 +200,17 @@ async function handleSearchByLabelInSpace(params: any) {
     } else if (typeof r?.url === 'string' && /^https?:\/\//.test(r.url)) {
       url = r.url;
     }
-    return { id, title, url };
-  });
+      return { id, title, url };
+    });
+    collected.push(...pageItems);
+    const links = (data?._links || {}) as any;
+    nextCursor = typeof links?.next === 'string' && /[?&]cursor=([^&]+)/.test(links.next)
+      ? decodeURIComponent((links.next.match(/[?&]cursor=([^&]+)/) || [])[1] || '')
+      : '';
+    pageCount++;
+  } while (autoPaginate && nextCursor && (maxResults === 0 || collected.length < maxResults) && pageCount < 10);
+  const results = maxResults > 0 ? collected.slice(0, maxResults) : collected;
+  const data = firstPage || { start: start || 0, limit, size: results.length, _links: {} };
   const links = (data?._links || {}) as any;
   const pagination = {
     start: data?.start ?? null,
@@ -273,23 +298,31 @@ async function handleListPagesInSpace(params: any) {
   const limit = Math.min(Math.max(Number(params?.limit) || 25, 1), 100);
   const start = Number(params?.start);
   const cursor = String(params?.cursor || '').trim();
+  const maxResults = Math.min(Math.max(Number(params?.maxResults) || 0, 0), 200);
+  const autoPaginate = Boolean(params?.autoPaginate) || maxResults > 0;
   if (!spaceKey) {
     return toolError('MISSING_INPUT', 'Missing required input: spaceKey', { missing: ['spaceKey'] });
   }
   const cql = `type=page and space=${encodeURIComponent(spaceKey)} ORDER BY lastmodified desc`;
   const authHeader = 'Basic ' + Buffer.from(`${email}:${token}`).toString('base64');
-  const qs2 = new URLSearchParams({ cql, limit: String(limit) });
-  if (!Number.isNaN(start) && Number.isFinite(start)) qs2.set('start', String(start));
-  if (cursor) qs2.set('cursor', cursor);
-  const url = `${baseUrl.replace(/\/$/, '')}/wiki/rest/api/search?${qs2.toString()}`;
-  const res = await httpFetch(url, { headers: { Authorization: authHeader, Accept: 'application/json' } });
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    return toolError('UPSTREAM_ERROR', `Confluence API ${res.status}: ${text || res.statusText}`);
-  }
-  const data = await res.json();
   const base = baseUrl.replace(/\/$/, '');
-  const results = (data?.results || []).map((r: any) => {
+  const collected: any[] = [];
+  let nextCursor = cursor;
+  let firstPage: any = null;
+  let pageCount = 0;
+  do {
+    const qs2 = new URLSearchParams({ cql, limit: String(limit) });
+    if (!Number.isNaN(start) && Number.isFinite(start) && !nextCursor) qs2.set('start', String(start));
+    if (nextCursor) qs2.set('cursor', nextCursor);
+    const url = `${base}/wiki/rest/api/search?${qs2.toString()}`;
+    const res = await httpFetch(url, { headers: { Authorization: authHeader, Accept: 'application/json' } });
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      return toolError('UPSTREAM_ERROR', `Confluence API ${res.status}: ${text || res.statusText}`);
+    }
+    const data = await res.json();
+    firstPage = firstPage || data;
+    const pageItems = (data?.results || []).map((r: any) => {
     const id = r?.content?.id || r?.id;
     const title = r?.title || r?.content?.title;
     const webui = r?.content?._links?.webui ?? r?._links?.webui ?? '';
@@ -299,8 +332,17 @@ async function handleListPagesInSpace(params: any) {
     } else if (typeof r?.url === 'string' && /^https?:\/\//.test(r.url)) {
       url = r.url;
     }
-    return { id, title, url };
-  });
+      return { id, title, url };
+    });
+    collected.push(...pageItems);
+    const links2 = (data?._links || {}) as any;
+    nextCursor = typeof links2?.next === 'string' && /[?&]cursor=([^&]+)/.test(links2.next)
+      ? decodeURIComponent((links2.next.match(/[?&]cursor=([^&]+)/) || [])[1] || '')
+      : '';
+    pageCount++;
+  } while (autoPaginate && nextCursor && (maxResults === 0 || collected.length < maxResults) && pageCount < 10);
+  const results = maxResults > 0 ? collected.slice(0, maxResults) : collected;
+  const data = firstPage || { start: start || 0, limit, size: results.length, _links: {} };
   const links2 = (data?._links || {}) as any;
   const pagination2 = {
     start: data?.start ?? null,
@@ -389,10 +431,12 @@ async function handleSearchPages(params: any) {
   }
   const query = String((params?.query ?? params?.q ?? params?.text ?? params?.question) || '').trim();
   const spaceKey = String(params?.spaceKey || '').trim();
-  const limit = Math.min(Math.max(Number(params?.limit) || 10, 1), 100);
+  const limit = Math.min(Math.max(Number(params?.limit) || 25, 1), 100);
   const start = Number(params?.start);
   const cursor = String(params?.cursor || '').trim();
   const includeArchivedSpaces = Boolean(params?.includeArchivedSpaces);
+  const maxResults = Math.min(Math.max(Number(params?.maxResults) || 0, 0), 200);
+  const autoPaginate = Boolean(params?.autoPaginate) || maxResults > 0;
   if (!query) {
     return toolError('MISSING_INPUT', 'Missing required input: query', { missing: ['query'] });
   }
@@ -420,19 +464,25 @@ async function handleSearchPages(params: any) {
   // Avoid unsupported ORDER BY fields like 'score'; prefer lastmodified for stability
   const cql = parts.join(' and ') + ' ORDER BY lastmodified desc';
   const authHeader = 'Basic ' + Buffer.from(`${email}:${token}`).toString('base64');
-  const qs = new URLSearchParams({ cql, limit: String(limit) });
-  if (!Number.isNaN(start) && Number.isFinite(start)) qs.set('start', String(start));
-  if (cursor) qs.set('cursor', cursor);
-  if (includeArchivedSpaces) qs.set('includeArchivedSpaces', 'true');
-  const url = `${baseUrl.replace(/\/$/, '')}/wiki/rest/api/search?${qs.toString()}`;
-  const res = await httpFetch(url, { headers: { Authorization: authHeader, Accept: 'application/json' } });
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    return toolError('UPSTREAM_ERROR', `Confluence API ${res.status}: ${text || res.statusText}`, { cql });
-  }
-  const data = await res.json();
   const base = baseUrl.replace(/\/$/, '');
-  const results = (data?.results || []).map((r: any) => {
+  const collected: any[] = [];
+  let nextCursor = cursor;
+  let firstPage: any = null;
+  let pageCount = 0;
+  do {
+    const qs = new URLSearchParams({ cql, limit: String(limit) });
+    if (!Number.isNaN(start) && Number.isFinite(start) && !nextCursor) qs.set('start', String(start));
+    if (nextCursor) qs.set('cursor', nextCursor);
+    if (includeArchivedSpaces) qs.set('includeArchivedSpaces', 'true');
+    const url = `${base}/wiki/rest/api/search?${qs.toString()}`;
+    const res = await httpFetch(url, { headers: { Authorization: authHeader, Accept: 'application/json' } });
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      return toolError('UPSTREAM_ERROR', `Confluence API ${res.status}: ${text || res.statusText}`, { cql });
+    }
+    const data = await res.json();
+    firstPage = firstPage || data;
+    const pageItems = (data?.results || []).map((r: any) => {
     const id = r?.content?.id || r?.id;
     const title = r?.title || r?.content?.title;
     const webui = r?.content?._links?.webui ?? r?._links?.webui ?? '';
@@ -443,8 +493,17 @@ async function handleSearchPages(params: any) {
     } else if (typeof r?.url === 'string' && /^https?:\/\//.test(r.url)) {
       url = r.url;
     }
-    return { id, title, url, excerpt };
-  });
+      return { id, title, url, excerpt };
+    });
+    collected.push(...pageItems);
+    const links = (data?._links || {}) as any;
+    nextCursor = typeof links?.next === 'string' && /[?&]cursor=([^&]+)/.test(links.next)
+      ? decodeURIComponent((links.next.match(/[?&]cursor=([^&]+)/) || [])[1] || '')
+      : '';
+    pageCount++;
+  } while (autoPaginate && nextCursor && (maxResults === 0 || collected.length < maxResults) && pageCount < 10);
+  const results = maxResults > 0 ? collected.slice(0, maxResults) : collected;
+  const data = firstPage || { start: start || 0, limit, size: results.length, _links: {} };
   const links = (data?._links || {}) as any;
   const pagination = {
     start: data?.start ?? null,
