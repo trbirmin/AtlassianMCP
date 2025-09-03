@@ -38,6 +38,9 @@ function getToolDescriptors() {
           query: { type: 'string', description: 'Free-text query to search in page titles and content' },
           spaceKey: { type: 'string', description: 'Optional Confluence space key to restrict the search' },
           limit: { type: 'number', description: 'Max results (default 10, max 100)' },
+          start: { type: 'number', description: 'Offset index for pagination (ignored when cursor is provided)' },
+          cursor: { type: 'string', description: 'Opaque cursor from a previous response for next/prev page' },
+          includeArchivedSpaces: { type: 'boolean', description: 'Include archived spaces in results' },
         },
         required: ['query'],
         additionalProperties: false,
@@ -53,6 +56,9 @@ function getToolDescriptors() {
           query: { type: 'string', description: 'Free-text query to search in page titles and content' },
           spaceKey: { type: 'string', description: 'Optional Confluence space key to restrict the search' },
           limit: { type: 'number', description: 'Max results (default 10, max 100)' },
+          start: { type: 'number', description: 'Offset index for pagination (ignored when cursor is provided)' },
+          cursor: { type: 'string', description: 'Opaque cursor from a previous response for next/prev page' },
+          includeArchivedSpaces: { type: 'boolean', description: 'Include archived spaces in results' },
         },
         required: ['query'],
         additionalProperties: false,
@@ -68,6 +74,8 @@ function getToolDescriptors() {
           label: { type: 'string', description: 'Confluence label (e.g., administration)' },
           spaceKey: { type: 'string', description: 'Space key (e.g., DOC)' },
           limit: { type: 'number', description: 'Max results (default 10, max 100)' },
+          start: { type: 'number', description: 'Offset index for pagination (ignored when cursor is provided)' },
+          cursor: { type: 'string', description: 'Opaque cursor from a previous response for next/prev page' },
         },
         required: ['label', 'spaceKey'],
         additionalProperties: false,
@@ -81,6 +89,7 @@ function getToolDescriptors() {
         properties: {
           prefix: { type: 'string', description: 'Filter labels starting with this string' },
           limit: { type: 'number', description: 'Max labels to return (default 25, max 100)' },
+          start: { type: 'number', description: 'Offset index for pagination' },
         },
         required: ['prefix'],
         additionalProperties: false,
@@ -93,6 +102,7 @@ function getToolDescriptors() {
         type: 'object',
         properties: {
           limit: { type: 'number', description: 'Max spaces to return (default 25, max 100)' },
+          start: { type: 'number', description: 'Offset index for pagination' },
         },
         additionalProperties: false,
       },
@@ -105,6 +115,8 @@ function getToolDescriptors() {
         properties: {
           spaceKey: { type: 'string', description: 'Space key (e.g., DOC)' },
           limit: { type: 'number', description: 'Max results (default 25, max 100)' },
+          start: { type: 'number', description: 'Offset index for pagination (ignored when cursor is provided)' },
+          cursor: { type: 'string', description: 'Opaque cursor from a previous response for next/prev page' },
         },
         required: ['spaceKey'],
         additionalProperties: false,
@@ -138,6 +150,8 @@ async function handleSearchByLabelInSpace(params: any) {
   const label = String(params?.label || '').trim();
   const spaceKey = String(params?.spaceKey || '').trim();
   const limit = Math.min(Math.max(Number(params?.limit) || 10, 1), 100);
+  const start = Number(params?.start);
+  const cursor = String(params?.cursor || '').trim();
   if (!label || !spaceKey) {
     const missing: string[] = [];
     if (!label) missing.push('label');
@@ -149,7 +163,10 @@ async function handleSearchByLabelInSpace(params: any) {
     spaceKey
   )} ORDER BY lastmodified desc`;
   const authHeader = 'Basic ' + Buffer.from(`${email}:${token}`).toString('base64');
-  const url = `${baseUrl.replace(/\/$/, '')}/wiki/rest/api/search?cql=${encodeURIComponent(cql)}&limit=${limit}`;
+  const qs = new URLSearchParams({ cql, limit: String(limit) });
+  if (!Number.isNaN(start) && Number.isFinite(start)) qs.set('start', String(start));
+  if (cursor) qs.set('cursor', cursor);
+  const url = `${baseUrl.replace(/\/$/, '')}/wiki/rest/api/search?${qs.toString()}`;
   const res = await httpFetch(url, { headers: { Authorization: authHeader, Accept: 'application/json' } });
   if (!res.ok) {
     const text = await res.text().catch(() => '');
@@ -169,6 +186,21 @@ async function handleSearchByLabelInSpace(params: any) {
     }
     return { id, title, url };
   });
+  const links = (data?._links || {}) as any;
+  const pagination = {
+    start: data?.start ?? null,
+    limit: data?.limit ?? limit,
+    size: data?.size ?? (results?.length ?? 0),
+    totalSize: data?.totalSize ?? undefined,
+    nextCursor: typeof links?.next === 'string' && /[?&]cursor=([^&]+)/.test(links.next)
+      ? decodeURIComponent((links.next.match(/[?&]cursor=([^&]+)/) || [])[1] || '')
+      : undefined,
+    prevCursor: typeof links?.prev === 'string' && /[?&]cursor=([^&]+)/.test(links.prev)
+      ? decodeURIComponent((links.prev.match(/[?&]cursor=([^&]+)/) || [])[1] || '')
+      : undefined,
+    nextUrl: links?.next ? (base + links.next) : undefined,
+    prevUrl: links?.prev ? (base + links.prev) : undefined,
+  } as const;
   const card = {
     type: 'AdaptiveCard',
     $schema: 'http://adaptivecards.io/schemas/adaptive-card.json',
@@ -178,7 +210,7 @@ async function handleSearchByLabelInSpace(params: any) {
       ...results.slice(0, 15).map((r: any) => ({ type: 'TextBlock', text: `${r.title}\n${r.url}`, wrap: true })),
     ],
   } as const;
-  return { cql, results, ui: { adaptiveCard: card } };
+  return { cql, results, pagination, ui: { adaptiveCard: card } };
 }
 
 async function handleListSpaces(params: any) {
@@ -192,8 +224,11 @@ async function handleListSpaces(params: any) {
     );
   }
   const limit = Math.min(Math.max(Number(params?.limit) || 25, 1), 100);
+  const start = Number(params?.start);
   const authHeader = 'Basic ' + Buffer.from(`${email}:${token}`).toString('base64');
-  const url = `${baseUrl.replace(/\/$/, '')}/wiki/rest/api/space?limit=${limit}`;
+  const qs = new URLSearchParams({ limit: String(limit) });
+  if (!Number.isNaN(start) && Number.isFinite(start)) qs.set('start', String(start));
+  const url = `${baseUrl.replace(/\/$/, '')}/wiki/rest/api/space?${qs.toString()}`;
   const res = await httpFetch(url, { headers: { Authorization: authHeader, Accept: 'application/json' } });
   if (!res.ok) {
     const text = await res.text().catch(() => '');
@@ -206,6 +241,12 @@ async function handleListSpaces(params: any) {
     name: s?.name,
     url: base + '/wiki' + (s?._links?.webui || ''),
   }));
+  const pagination = {
+    start: data?.start ?? null,
+    limit: data?.limit ?? limit,
+    size: data?.size ?? (results?.length ?? 0),
+    _links: data?._links,
+  } as const;
   const card = {
     type: 'AdaptiveCard',
     $schema: 'http://adaptivecards.io/schemas/adaptive-card.json',
@@ -215,7 +256,7 @@ async function handleListSpaces(params: any) {
       ...results.slice(0, 15).map((r: any) => ({ type: 'TextBlock', text: `${r.key} — ${r.name}\n${r.url}`, wrap: true })),
     ],
   } as const;
-  return { results, ui: { adaptiveCard: card } };
+  return { results, pagination, ui: { adaptiveCard: card } };
 }
 
 async function handleListPagesInSpace(params: any) {
@@ -230,12 +271,17 @@ async function handleListPagesInSpace(params: any) {
   }
   const spaceKey = String(params?.spaceKey || '').trim();
   const limit = Math.min(Math.max(Number(params?.limit) || 25, 1), 100);
+  const start = Number(params?.start);
+  const cursor = String(params?.cursor || '').trim();
   if (!spaceKey) {
     return toolError('MISSING_INPUT', 'Missing required input: spaceKey', { missing: ['spaceKey'] });
   }
   const cql = `type=page and space=${encodeURIComponent(spaceKey)} ORDER BY lastmodified desc`;
   const authHeader = 'Basic ' + Buffer.from(`${email}:${token}`).toString('base64');
-  const url = `${baseUrl.replace(/\/$/, '')}/wiki/rest/api/search?cql=${encodeURIComponent(cql)}&limit=${limit}`;
+  const qs2 = new URLSearchParams({ cql, limit: String(limit) });
+  if (!Number.isNaN(start) && Number.isFinite(start)) qs2.set('start', String(start));
+  if (cursor) qs2.set('cursor', cursor);
+  const url = `${baseUrl.replace(/\/$/, '')}/wiki/rest/api/search?${qs2.toString()}`;
   const res = await httpFetch(url, { headers: { Authorization: authHeader, Accept: 'application/json' } });
   if (!res.ok) {
     const text = await res.text().catch(() => '');
@@ -255,6 +301,21 @@ async function handleListPagesInSpace(params: any) {
     }
     return { id, title, url };
   });
+  const links2 = (data?._links || {}) as any;
+  const pagination2 = {
+    start: data?.start ?? null,
+    limit: data?.limit ?? limit,
+    size: data?.size ?? (results?.length ?? 0),
+    totalSize: data?.totalSize ?? undefined,
+    nextCursor: typeof links2?.next === 'string' && /[?&]cursor=([^&]+)/.test(links2.next)
+      ? decodeURIComponent((links2.next.match(/[?&]cursor=([^&]+)/) || [])[1] || '')
+      : undefined,
+    prevCursor: typeof links2?.prev === 'string' && /[?&]cursor=([^&]+)/.test(links2.prev)
+      ? decodeURIComponent((links2.prev.match(/[?&]cursor=([^&]+)/) || [])[1] || '')
+      : undefined,
+    nextUrl: links2?.next ? (base + links2.next) : undefined,
+    prevUrl: links2?.prev ? (base + links2.prev) : undefined,
+  } as const;
   const card = {
     type: 'AdaptiveCard',
     $schema: 'http://adaptivecards.io/schemas/adaptive-card.json',
@@ -264,7 +325,7 @@ async function handleListPagesInSpace(params: any) {
       ...results.slice(0, 15).map((r: any) => ({ type: 'TextBlock', text: `${r.title}\n${r.url}`, wrap: true })),
     ],
   } as const;
-  return { cql, results, ui: { adaptiveCard: card } };
+  return { cql, results, pagination: pagination2, ui: { adaptiveCard: card } };
 }
 
 async function handleListLabels(params: any) {
@@ -278,6 +339,7 @@ async function handleListLabels(params: any) {
     );
   }
   const limit = Math.min(Math.max(Number(params?.limit) || 25, 1), 100);
+  const start = Number(params?.start);
   const prefix = String((params?.prefix ?? params?.label ?? params?.name ?? params?.q) || '').trim();
   if (!prefix) {
     return toolError('MISSING_INPUT', 'Missing required input: prefix', { missing: ['prefix'] });
@@ -285,6 +347,7 @@ async function handleListLabels(params: any) {
   const authHeader = 'Basic ' + Buffer.from(`${email}:${token}`).toString('base64');
   const qs = new URLSearchParams({ limit: String(limit) });
   if (prefix) qs.set('prefix', prefix);
+  if (!Number.isNaN(start) && Number.isFinite(start)) qs.set('start', String(start));
   const url = `${baseUrl.replace(/\/$/, '')}/wiki/rest/api/label?${qs.toString()}`;
   const res = await httpFetch(url, { headers: { Authorization: authHeader, Accept: 'application/json' } });
   if (!res.ok) {
@@ -296,6 +359,12 @@ async function handleListLabels(params: any) {
     name: typeof l === 'string' ? l : l?.name || '',
     prefix: l?.prefix,
   })).filter((x: any) => x.name);
+  const pagination = {
+    start: data?.start ?? null,
+    limit: data?.limit ?? limit,
+    size: data?.size ?? (results?.length ?? 0),
+    _links: data?._links,
+  } as const;
   const card = {
     type: 'AdaptiveCard',
     $schema: 'http://adaptivecards.io/schemas/adaptive-card.json',
@@ -305,7 +374,7 @@ async function handleListLabels(params: any) {
       ...results.slice(0, 30).map((r: any) => ({ type: 'TextBlock', text: r.name, wrap: true })),
     ],
   } as const;
-  return { results, ui: { adaptiveCard: card } };
+  return { results, pagination, ui: { adaptiveCard: card } };
 }
 
 async function handleSearchPages(params: any) {
@@ -321,6 +390,9 @@ async function handleSearchPages(params: any) {
   const query = String((params?.query ?? params?.q ?? params?.text ?? params?.question) || '').trim();
   const spaceKey = String(params?.spaceKey || '').trim();
   const limit = Math.min(Math.max(Number(params?.limit) || 10, 1), 100);
+  const start = Number(params?.start);
+  const cursor = String(params?.cursor || '').trim();
+  const includeArchivedSpaces = Boolean(params?.includeArchivedSpaces);
   if (!query) {
     return toolError('MISSING_INPUT', 'Missing required input: query', { missing: ['query'] });
   }
@@ -348,7 +420,11 @@ async function handleSearchPages(params: any) {
   // Avoid unsupported ORDER BY fields like 'score'; prefer lastmodified for stability
   const cql = parts.join(' and ') + ' ORDER BY lastmodified desc';
   const authHeader = 'Basic ' + Buffer.from(`${email}:${token}`).toString('base64');
-  const url = `${baseUrl.replace(/\/$/, '')}/wiki/rest/api/search?cql=${encodeURIComponent(cql)}&limit=${limit}`;
+  const qs = new URLSearchParams({ cql, limit: String(limit) });
+  if (!Number.isNaN(start) && Number.isFinite(start)) qs.set('start', String(start));
+  if (cursor) qs.set('cursor', cursor);
+  if (includeArchivedSpaces) qs.set('includeArchivedSpaces', 'true');
+  const url = `${baseUrl.replace(/\/$/, '')}/wiki/rest/api/search?${qs.toString()}`;
   const res = await httpFetch(url, { headers: { Authorization: authHeader, Accept: 'application/json' } });
   if (!res.ok) {
     const text = await res.text().catch(() => '');
@@ -369,6 +445,21 @@ async function handleSearchPages(params: any) {
     }
     return { id, title, url, excerpt };
   });
+  const links = (data?._links || {}) as any;
+  const pagination = {
+    start: data?.start ?? null,
+    limit: data?.limit ?? limit,
+    size: data?.size ?? (results?.length ?? 0),
+    totalSize: data?.totalSize ?? undefined,
+    nextCursor: typeof links?.next === 'string' && /[?&]cursor=([^&]+)/.test(links.next)
+      ? decodeURIComponent((links.next.match(/[?&]cursor=([^&]+)/) || [])[1] || '')
+      : undefined,
+    prevCursor: typeof links?.prev === 'string' && /[?&]cursor=([^&]+)/.test(links.prev)
+      ? decodeURIComponent((links.prev.match(/[?&]cursor=([^&]+)/) || [])[1] || '')
+      : undefined,
+    nextUrl: links?.next ? (base + links.next) : undefined,
+    prevUrl: links?.prev ? (base + links.prev) : undefined,
+  } as const;
   const card = {
     type: 'AdaptiveCard',
     $schema: 'http://adaptivecards.io/schemas/adaptive-card.json',
@@ -381,7 +472,7 @@ async function handleSearchPages(params: any) {
     ],
     actions: results.slice(0, 5).map((r: any) => ({ type: 'Action.OpenUrl', title: r.title, url: r.url })),
   } as const;
-  return { cql, results, ui: { adaptiveCard: card } };
+  return { cql, results, pagination, ui: { adaptiveCard: card } };
 }
 
 async function handleDescribeTools(_params: any) {
