@@ -625,5 +625,5 @@ if (typeof portOrPipe === 'string') {
   app.listen(portOrPipe, () => console.log(`MCP server listening on ${portOrPipe}`));
 } else {
   const numericPort = typeof portOrPipe === 'number' ? portOrPipe : parseInt(String(portOrPipe), 10);
-  app.listen(numericPort, '0.0.0.0', () => console.log(`MCP server listening on port ${numericPort}`));
+  app.listen(numericPort, '127.0.0.1', () => console.log(`MCP server listening on port ${numericPort}`));
 }
