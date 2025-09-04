@@ -43,26 +43,6 @@ function sseHeaders(res: Response) {
 function getToolDescriptors() {
   return [
     {
-      name: 'search',
-      description:
-        'Alias of searchPages. Full-text search across all Confluence pages; optionally restrict by spaceKey.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          query: { type: 'string', description: 'Free-text query to search in page titles and content' },
-          spaceKey: { type: 'string', description: 'Optional Confluence space key to restrict the search' },
-          limit: { type: 'number', description: 'Page size per request (default 50, max 100; service may cap to 50)' },
-          start: { type: 'number', description: 'Offset index for pagination (ignored when cursor is provided)' },
-          cursor: { type: 'string', description: 'Opaque cursor from a previous response for next/prev page' },
-          includeArchivedSpaces: { type: 'boolean', description: 'Include archived spaces in results' },
-          maxResults: { type: 'number', description: 'When set, auto-paginates until this many results are collected (omit for full traversal)' },
-          autoPaginate: { type: 'boolean', description: 'Defaults to true. Auto-paginates using cursor until maxResults or no next page' },
-        },
-        required: ['query'],
-        additionalProperties: false,
-      },
-    },
-    {
       name: 'searchPages',
       description:
         'Full-text search across all Confluence pages. Use this whenever the user asks a question or requests information. Optionally restrict by spaceKey.',
@@ -83,39 +63,6 @@ function getToolDescriptors() {
       },
     },
     {
-      name: 'searchByLabelInSpace',
-      description:
-        'Search pages by label within a space, sorted by latest modified; returns up to limit results (default 10).',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          label: { type: 'string', description: 'Confluence label (e.g., administration)' },
-          spaceKey: { type: 'string', description: 'Space key (e.g., DOC)' },
-          limit: { type: 'number', description: 'Page size per request (default 50, max 100; service may cap to 50)' },
-          start: { type: 'number', description: 'Offset index for pagination (ignored when cursor is provided)' },
-          cursor: { type: 'string', description: 'Opaque cursor from a previous response for next/prev page' },
-          maxResults: { type: 'number', description: 'When set, auto-paginates until this many results are collected (omit for full traversal)' },
-          autoPaginate: { type: 'boolean', description: 'Defaults to true. Auto-paginates using cursor until maxResults or no next page' },
-        },
-        required: ['label', 'spaceKey'],
-        additionalProperties: false,
-      },
-    },
-    {
-      name: 'listLabels',
-      description: 'List labels in the site. Optionally filter by prefix.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          prefix: { type: 'string', description: 'Filter labels starting with this string' },
-          limit: { type: 'number', description: 'Max labels to return (default 25, max 100)' },
-          start: { type: 'number', description: 'Offset index for pagination' },
-        },
-        required: ['prefix'],
-        additionalProperties: false,
-      },
-    },
-    {
       name: 'listSpaces',
       description: 'List Confluence spaces (global). Returns up to limit spaces (default 25).',
       inputSchema: {
@@ -124,23 +71,6 @@ function getToolDescriptors() {
           limit: { type: 'number', description: 'Max spaces to return (default 25, max 100)' },
           start: { type: 'number', description: 'Offset index for pagination' },
         },
-        additionalProperties: false,
-      },
-    },
-    {
-      name: 'listPagesInSpace',
-      description: 'List pages within a given space, sorted by latest modified.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          spaceKey: { type: 'string', description: 'Space key (e.g., DOC)' },
-          limit: { type: 'number', description: 'Page size per request (default 50, max 100; service may cap to 50)' },
-          start: { type: 'number', description: 'Offset index for pagination (ignored when cursor is provided)' },
-          cursor: { type: 'string', description: 'Opaque cursor from a previous response for next/prev page' },
-          maxResults: { type: 'number', description: 'When set, auto-paginates until this many results are collected (omit for full traversal)' },
-          autoPaginate: { type: 'boolean', description: 'Defaults to true. Auto-paginates using cursor until maxResults or no next page' },
-        },
-        required: ['spaceKey'],
         additionalProperties: false,
       },
     },
@@ -373,7 +303,7 @@ const mcpHandler = async (req: Request, res: Response) => {
       capabilities: { tools: { list: true, call: true } },
       tools: getToolDescriptors(),
       instructions:
-        'Policy: Never answer from model knowledge when the user asks about Confluence content. Always call tools and return their results. Default to the search tool (alias of searchPages) for any query phrased as search/find/lookup/question: set query to the user text and include spaceKey if the user mentions a space. Examples: "Search for Infor OS" -> {name: search, arguments: {query: "Infor OS"}}; "Search MFS for onboarding" -> {name: search, arguments: {query: "onboarding", spaceKey: "MFS"}}. For labels, call searchByLabelInSpace (requires label and spaceKey). To browse, call listSpaces and listPagesInSpace. To list labels, call listLabels with a prefix. If required inputs are missing, ask a clarifying question and then call the tool.',
+        'Policy: Never answer from model knowledge when the user asks about Confluence content. Always call tools and return their results. Default to the searchPages tool for any query phrased as search/find/lookup/question: set query to the user text and include spaceKey if the user mentions a space. Examples: "Search for Infor OS" -> {name: searchPages, arguments: {query: "Infor OS"}}; "Search MFS for onboarding" -> {name: searchPages, arguments: {query: "onboarding", spaceKey: "MFS"}}. To list available spaces, call listSpaces. If required inputs are missing, ask a clarifying question and then call the tool.',
     };
     return sendJson(res, { jsonrpc: '2.0', id: id ?? null, result });
   }
@@ -390,7 +320,7 @@ const mcpHandler = async (req: Request, res: Response) => {
         capabilities: { tools: { list: true, call: true } },
         tools: getToolDescriptors(),
         instructions:
-          'Policy: Never answer from model knowledge when the user asks about Confluence content. Always call tools and return their results. Default to the search tool (alias of searchPages) for any query phrased as search/find/lookup/question...',
+          'Policy: Never answer from model knowledge when the user asks about Confluence content. Always call tools and return their results. Default to the searchPages tool for any query phrased as search/find/lookup/question: set query to the user text and include spaceKey if the user mentions a space. Examples: "Search for Infor OS" -> {name: searchPages, arguments: {query: "Infor OS"}}; "Search MFS for onboarding" -> {name: searchPages, arguments: {query: "onboarding", spaceKey: "MFS"}}. To list available spaces, call listSpaces. If required inputs are missing, ask a clarifying question and then call the tool.',
       },
     });
   }
@@ -409,21 +339,11 @@ const mcpHandler = async (req: Request, res: Response) => {
     let out: any;
 
     switch (name) {
-      case 'search':
       case 'searchPages':
         out = await handleSearchPages(args);
         break;
-      case 'searchByLabelInSpace':
-        out = await handleSearchByLabelInSpace(args);
-        break;
       case 'listSpaces':
         out = await handleListSpaces(args);
-        break;
-      case 'listPagesInSpace':
-        out = await handleListPagesInSpace(args);
-        break;
-      case 'listLabels':
-        out = await handleListLabels(args);
         break;
       case 'describeTools':
         out = await handleDescribeTools(args);
