@@ -84,8 +84,8 @@ async function handleSearchPages(params: any) {
   const requestsAllResults = /\b(all|every|full|complete)\s+(result|results|page|pages|record|records)\b/i.test(query);
   
   // Set a safer default limit to avoid token limit errors
-  // Use 50 for queries that specifically ask for all results, otherwise use 25
-  const defaultMaxResults = requestsAllResults ? 50 : 25;
+  // Use 50 for queries that specifically ask for all results, otherwise use 30
+  const defaultMaxResults = requestsAllResults ? 50 : 30;
   
   // Set maxResults with appropriate limits to avoid token overflow
   const maxResults = Math.max(Number.isFinite(Number(params?.maxResults)) ? Number(params?.maxResults) : defaultMaxResults, 0);
@@ -205,6 +205,17 @@ async function handleSearchPages(params: any) {
     
     // Prepare the results - strictly enforce the maxResults limit
     const results = collected.slice(0, maxResults);
+    
+    // Log the exact number of results being returned
+    console.log(`Returning ${results.length} results to the client`);
+    
+    // Force include total count in the results object itself so the client knows how many results we're returning
+    const resultWithCount = {
+      items: results,
+      count: results.length,
+      totalAvailable: collected.length
+    };
+    
     const data = firstPage || { start: start || 0, limit, size: results.length, _links: {} };
     const links = (data?._links || {}) as any;
     
@@ -223,13 +234,15 @@ async function handleSearchPages(params: any) {
       prevUrl: links?.prev ? (base + links.prev) : undefined,
     };
     
-    return { cql, results, pagination };
+    return { cql, results: resultWithCount.items, resultCount: resultWithCount.count, totalAvailable: resultWithCount.totalAvailable, pagination };
   } catch (error: any) {
     console.error("Error fetching from Confluence API:", error);
     
     return { 
       cql: `type=page and text ~ "${query}"`,
       results: [],
+      resultCount: 0,
+      totalAvailable: 0,
       pagination: {
         start: start,
         limit: limit,
