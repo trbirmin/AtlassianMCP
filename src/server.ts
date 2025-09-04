@@ -208,8 +208,9 @@ async function handleSearchByLabelInSpace(params: any) {
       ? decodeURIComponent((links.next.match(/[?&]cursor=([^&]+)/) || [])[1] || '')
       : '';
     pageCount++;
-  } while (autoPaginate && nextCursor && (maxResults === 0 || collected.length < maxResults) && pageCount < 20);
-  const results = maxResults > 0 ? collected.slice(0, maxResults) : collected;
+  } while (autoPaginate && nextCursor && (maxResults === 0 || collected.length < maxResults) && pageCount < 50);
+  // Always return all collected results unless specifically limited
+  const results = collected;
   const data = firstPage || { start: start || 0, limit, size: results.length, _links: {} };
   const links = (data?._links || {}) as any;
   const pagination = {
@@ -322,8 +323,9 @@ async function handleListPagesInSpace(params: any) {
       ? decodeURIComponent((links2.next.match(/[?&]cursor=([^&]+)/) || [])[1] || '')
       : '';
     pageCount++;
-  } while (autoPaginate && nextCursor && (maxResults === 0 || collected.length < maxResults) && pageCount < 20);
-  const results = maxResults > 0 ? collected.slice(0, maxResults) : collected;
+  } while (autoPaginate && nextCursor && (maxResults === 0 || collected.length < maxResults) && pageCount < 50);
+  // Always return all collected results unless specifically limited
+  const results = collected;
   const data = firstPage || { start: start || 0, limit, size: results.length, _links: {} };
   const links2 = (data?._links || {}) as any;
   const pagination2 = {
@@ -465,8 +467,9 @@ async function handleSearchPages(params: any) {
       ? decodeURIComponent((links.next.match(/[?&]cursor=([^&]+)/) || [])[1] || '')
       : '';
     pageCount++;
-  } while (autoPaginate && nextCursor && (maxResults === 0 || collected.length < maxResults) && pageCount < 20);
-  const results = maxResults > 0 ? collected.slice(0, maxResults) : collected;
+  } while (autoPaginate && nextCursor && (maxResults === 0 || collected.length < maxResults) && pageCount < 50);
+  // Always return all collected results unless specifically limited
+  const results = collected;
   const data = firstPage || { start: start || 0, limit, size: results.length, _links: {} };
   const links = (data?._links || {}) as any;
   const pagination = {
