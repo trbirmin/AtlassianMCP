@@ -1,6 +1,16 @@
 # Atlassian MCP Streamable HTTP Server
 
-A minimal Model Context Protocol (MCP) server implementing the Streamable HTTP transport, deployable to Azure App Service and connectable to Microsoft Copilot Studio via a custom connector.
+A minimal Model Context Protocol (MCP) server i## Add the connector to a Copilot (actions)
+1) Open your Copilot in Copilot Studio.
+2) Go to the Actions/Plugins area and add your custom connector.
+3) Select the operation (InvokeMCP). The agent will send MCP JSON-RPC messages to `/mcp`.
+4) Test: Ask the Copilot to search Confluence with questions like:
+   - "Search Confluence for project documentation"
+   - "Find information about [topic] in Confluence"
+   - "Look up [keyword] in our Confluence wiki"
+
+Notes
+- SSE is being deprecated in August 2025; this server prefers JSON and supports SSE only when explicitly requested.ing the Streamable HTTP transport, deployable to Azure App Service and connectable to Microsoft Copilot Studio via a custom connector.
 
 ## Features
 - Streamable HTTP MCP endpoint at `/mcp` supporting POST and GET per spec (2025-03-26)
@@ -9,14 +19,25 @@ A minimal Model Context Protocol (MCP) server implementing the Streamable HTTP t
 - Secure CORS allowlist via `ALLOWED_ORIGINS`
 - OpenAPI (`openapi-mcp.yaml`) with `x-ms-agentic-protocol: mcp-streamable-1.0`
 - GitHub Actions OIDC pipeline to deploy to Azure App Service
+- Confluence integration with real API support or customizable mock data
 
 ## Prerequisites
 - Node.js 18+ (Node 20 recommended)
 - Azure subscription with permission to create App Service and role assignments
 - GitHub repository for this source code
+- Atlassian Confluence account (optional for real API integration)
 
 ## Local run
 ```powershell
+# Set your Confluence domain (even for mock data)
+$env:CUSTOM_CONFLUENCE_DOMAIN = "your-domain.atlassian.net"
+
+# For real API integration, set these as well
+$env:CONFLUENCE_BASE_URL = "https://your-domain.atlassian.net"
+$env:CONFLUENCE_EMAIL = "your-email@example.com"
+$env:CONFLUENCE_API_TOKEN = "your-api-token"
+
+# Run the server
 npm ci
 npm run build
 npm start
@@ -31,7 +52,11 @@ npm run dev
   - App Settings (Configuration > Application settings):
     - `ALLOWED_ORIGINS` (optional): comma-separated origins if your caller is a browser
     - `WEBSITE_NODE_DEFAULT_VERSION` (optional): `~20`
-    - Confluence (optional): `CONFLUENCE_BASE_URL`, `CONFLUENCE_EMAIL`, `CONFLUENCE_API_TOKEN`
+    - `CUSTOM_CONFLUENCE_DOMAIN`: your Confluence domain (e.g., your-domain.atlassian.net)
+    - For real Confluence API integration (optional):
+      - `CONFLUENCE_BASE_URL`: Full URL (e.g., https://your-domain.atlassian.net)
+      - `CONFLUENCE_EMAIL`: Your Atlassian account email
+      - `CONFLUENCE_API_TOKEN`: Your Atlassian API token (create at https://id.atlassian.com/manage-profile/security/api-tokens)
 
 2) Grant deployment identity via Entra ID (OIDC):
   - Create (or use) an App registration (Service Principal)
@@ -86,6 +111,44 @@ For an expanded, screenshot-ready walkthrough, see `docs/CONNECTOR.md`.
 
 ## MCP basics implemented
 - initialize, tools/list, tools/call with friendly JSON-RPC errors
-- Confluence helpers (optional) behind environment variables
+- Confluence search integration with both real API and mock data support
+- Automatic initialization of MCP tools before handling requests
+- Session tracking for stateful interactions
 
+## Troubleshooting
+- If you see mock results with default URLs, check that you've set the `CUSTOM_CONFLUENCE_DOMAIN` environment variable
+- If you want to use real Confluence API data, make sure all three variables are set: `CONFLUENCE_BASE_URL`, `CONFLUENCE_EMAIL`, and `CONFLUENCE_API_TOKEN`
+- Check the server logs for error messages and warnings
+- Verify the server is accessible from your Copilot Studio by testing the connection
+
+## Testing Confluence Credentials
+
+To verify your Confluence credentials are working correctly, you can use the included test scripts:
+
+### For Windows (PowerShell):
+```powershell
+# Set your credentials first
+$env:CONFLUENCE_BASE_URL = "https://your-domain.atlassian.net"
+$env:CONFLUENCE_EMAIL = "your-email@example.com"
+$env:CONFLUENCE_API_TOKEN = "your-api-token"
+
+# Run the test script
+./scripts/test-confluence-credentials.ps1
+```
+
+### For Linux/macOS (Bash):
+```bash
+# Set your credentials first
+export CONFLUENCE_BASE_URL="https://your-domain.atlassian.net"
+export CONFLUENCE_EMAIL="your-email@example.com"
+export CONFLUENCE_API_TOKEN="your-api-token"
+
+# Make the script executable
+chmod +x ./scripts/test-confluence-credentials.sh
+
+# Run the test script
+./scripts/test-confluence-credentials.sh
+```
+
+For more information on obtaining an Atlassian API token, see [docs/ATLASSIAN_API_TOKEN.md](docs/ATLASSIAN_API_TOKEN.md).
 Extend by adding MCP tools/resources/prompts in `src/server.ts`.

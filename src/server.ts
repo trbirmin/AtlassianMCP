@@ -5,17 +5,32 @@ import { fetch as undiciFetch } from 'undici';
 import morgan from 'morgan';
 import { randomUUID } from 'crypto';
 
+/*
+ * MCP Server for Confluence integration
+ * 
+ * Environment variables:
+ * - CONFLUENCE_BASE_URL: The base URL of your Confluence instance (e.g., https://your-domain.atlassian.net)
+ * - CONFLUENCE_EMAIL: Your Atlassian account email
+ * - CONFLUENCE_API_TOKEN: Your Atlassian API token (create at https://id.atlassian.com/manage-profile/security/api-tokens)
+ * - CUSTOM_CONFLUENCE_DOMAIN: Alternative to CONFLUENCE_BASE_URL, just the domain part (e.g., your-domain.atlassian.net)
+ * - PORT: The port to run the server on (default: 3000)
+ */
+
 // Use global fetch if available (Node 18+), otherwise fall back to undici
 const httpFetch: typeof fetch = (globalThis as any).fetch ?? (undiciFetch as any);
 
+// Setup environment variables and defaults
+const DEFAULT_CONFLUENCE_DOMAIN = process.env.CUSTOM_CONFLUENCE_DOMAIN || "example.atlassian.net";
+console.log(`Using Confluence domain: ${DEFAULT_CONFLUENCE_DOMAIN}`);
+
 // Generate mock results (always returns 20 items)
-function generateMockResults(query: string, count: number = 20) {
+function generateMockResults(query: string, count: number = 20, baseUrl: string = `https://${DEFAULT_CONFLUENCE_DOMAIN}`) {
   const results = [];
   for (let i = 0; i < count; i++) {
     results.push({
       id: `page-${i + 1}`,
       title: `Result ${i + 1} for "${query}"`,
-      url: `https://example.atlassian.net/wiki/spaces/TEST/pages/${i + 1}`,
+      url: `${baseUrl}/wiki/spaces/TEST/pages/${i + 1}`,
       // Clean up excerpt formatting to avoid special characters
       excerpt: `This is an example result ${i + 1} for the search query "${query}". It contains relevant information.`
     });
@@ -217,31 +232,175 @@ async function handleSearchPages(params: any) {
   const spaceKey = String(params?.spaceKey || '').trim();
   const limit = Math.min(Math.max(Number(params?.limit) || 50, 1), 100);
   const start = Number(params?.start) || 0;
+  const cursor = String(params?.cursor || '').trim();
+  const maxResults = Math.max(Number.isFinite(Number(params?.maxResults)) ? Number(params?.maxResults) : 50, 0);
+  const autoPaginate = params?.autoPaginate !== false || maxResults > 0;
   
   if (!query) {
     return toolError('MISSING_INPUT', 'Missing required input: query', { missing: ['query'] });
   }
 
-  // Always generate 20 mock results
-  const results = generateMockResults(query, 20);
+  // Check if we have Confluence credentials
+  const baseUrl = process.env.CONFLUENCE_BASE_URL;
+  const email = process.env.CONFLUENCE_EMAIL;
+  const token = process.env.CONFLUENCE_API_TOKEN;
+
+  // If we don't have credentials, return mock data
+  if (!baseUrl || !email || !token) {
+    console.log("No Confluence credentials found, using mock data");
+    
+    // Use the default Confluence domain set at the top of the file
+    const results = generateMockResults(query, 20);
+    
+    // Create mock pagination info
+    const pagination = {
+      start: start,
+      limit: limit,
+      size: results.length,
+      totalSize: 100,
+      nextCursor: results.length < 100 ? "mock-next-cursor" : undefined,
+      prevCursor: start > 0 ? "mock-prev-cursor" : undefined,
+      nextUrl: results.length < 100 ? "https://example.com/next" : undefined,
+      prevUrl: start > 0 ? "https://example.com/prev" : undefined
+    };
+    
+    return { 
+      cql: `type=page and text ~ ${query}`,
+      results,
+      pagination
+    };
+  }
   
-  // Create mock pagination info
-  const pagination = {
-    start: start,
-    limit: limit,
-    size: results.length,
-    totalSize: 100,
-    nextCursor: results.length < 100 ? "mock-next-cursor" : undefined,
-    prevCursor: start > 0 ? "mock-prev-cursor" : undefined,
-    nextUrl: results.length < 100 ? "https://example.com/next" : undefined,
-    prevUrl: start > 0 ? "https://example.com/prev" : undefined
-  };
-  
-  return { 
-    cql: `type=page and text ~ ${query}`,
-    results,
-    pagination
-  };
+  // We have credentials, use the real Confluence API
+  console.log("Using real Confluence API");
+  try {
+    // Construct the CQL query
+    let cql = `type=page and text ~ "${query}"`;
+    if (spaceKey) {
+      cql += ` and space="${spaceKey}"`;
+    }
+    
+    // Basic authentication header
+    const authHeader = 'Basic ' + Buffer.from(`${email}:${token}`).toString('base64');
+    const base = baseUrl.replace(/\/$/, '');
+    
+    // Prepare for pagination
+    const collected: any[] = [];
+    let nextCursor = cursor;
+    let firstPage: any = null;
+    let pageCount = 0;
+    
+    // Fetch pages
+    do {
+      const qs = new URLSearchParams({ cql, limit: String(limit) });
+      if (!Number.isNaN(start) && Number.isFinite(start) && !nextCursor) qs.set('start', String(start));
+      if (nextCursor) qs.set('cursor', nextCursor);
+      
+      const url = `${base}/wiki/rest/api/search?${qs.toString()}`;
+      console.log(`Fetching from: ${url}`);
+      
+      const res = await httpFetch(url, { headers: { Authorization: authHeader, Accept: 'application/json' } });
+      
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        console.error(`Confluence API error: ${res.status} - ${text || res.statusText}`);
+        
+        // Fall back to mock data on error
+        const results = generateMockResults(query, 20);
+        const pagination = {
+          start: start,
+          limit: limit,
+          size: results.length,
+          totalSize: 100,
+          nextCursor: undefined,
+          prevCursor: undefined,
+          nextUrl: undefined,
+          prevUrl: undefined
+        };
+        
+        return { 
+          cql,
+          results,
+          pagination,
+          error: `API error: ${res.status} - ${text || res.statusText}`
+        };
+      }
+      
+      const data = await res.json();
+      firstPage = firstPage || data;
+      
+      const pageItems = (data?.results || []).map((r: any) => {
+        const id = r?.content?.id || r?.id;
+        const title = r?.title || r?.content?.title;
+        const webui = r?.content?._links?.webui ?? r?._links?.webui ?? '';
+        let url = '';
+        
+        if (webui) {
+          url = base + '/wiki' + webui;
+        } else if (typeof r?.url === 'string' && /^https?:\/\//.test(r.url)) {
+          url = r.url;
+        }
+        
+        // Get excerpt
+        let excerpt = r?.excerpt || '';
+        
+        return { id, title, url, excerpt };
+      });
+      
+      collected.push(...pageItems);
+      
+      const links = (data?._links || {}) as any;
+      nextCursor = typeof links?.next === 'string' && /[?&]cursor=([^&]+)/.test(links.next)
+        ? decodeURIComponent((links.next.match(/[?&]cursor=([^&]+)/) || [])[1] || '')
+        : '';
+      
+      pageCount++;
+    } while (autoPaginate && nextCursor && (maxResults === 0 || collected.length < maxResults) && pageCount < 50);
+    
+    // Prepare the results
+    const results = collected.slice(0, maxResults > 0 ? maxResults : undefined);
+    const data = firstPage || { start: start || 0, limit, size: results.length, _links: {} };
+    const links = (data?._links || {}) as any;
+    
+    const pagination = {
+      start: data?.start ?? null,
+      limit: data?.limit ?? limit,
+      size: data?.size ?? (results?.length ?? 0),
+      totalSize: data?.totalSize ?? undefined,
+      nextCursor: typeof links?.next === 'string' && /[?&]cursor=([^&]+)/.test(links.next)
+        ? decodeURIComponent((links.next.match(/[?&]cursor=([^&]+)/) || [])[1] || '')
+        : undefined,
+      prevCursor: typeof links?.prev === 'string' && /[?&]cursor=([^&]+)/.test(links.prev)
+        ? decodeURIComponent((links.prev.match(/[?&]cursor=([^&]+)/) || [])[1] || '')
+        : undefined,
+      nextUrl: links?.next ? (base + links.next) : undefined,
+      prevUrl: links?.prev ? (base + links.prev) : undefined,
+    };
+    
+    return { cql, results, pagination };
+  } catch (error: any) {
+    console.error("Error fetching from Confluence API:", error);
+    
+    // Fall back to mock data on error
+    const results = generateMockResults(query, 20);
+    const pagination = {
+      start: start,
+      limit: limit,
+      size: results.length,
+      totalSize: 100,
+      nextCursor: undefined,
+      prevCursor: undefined,
+      nextUrl: undefined,
+      prevUrl: undefined
+    };
+    
+    return { 
+      cql: `type=page and text ~ ${query}`,
+      results,
+      pagination,
+      error: `Exception: ${error.message || 'Unknown error'}`
+    };
+  }
 }
 
 async function handleDescribeTools(_params: any) {
