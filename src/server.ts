@@ -51,8 +51,7 @@ function getToolDescriptors() {
           start: { type: 'number', description: 'Offset index for pagination (ignored when cursor is provided)' },
           cursor: { type: 'string', description: 'Opaque cursor from a previous response for next/prev page' },
           includeArchivedSpaces: { type: 'boolean', description: 'Include archived spaces in results' },
-          maxResults: { type: 'number' , description: 'When set, auto-paginates until this many results are collected (omit for full traversal)' },
-          autoPaginate: { type: 'boolean', description: 'Defaults to true. Auto-paginates using cursor until maxResults or no next page' },
+          maxResults: { type: 'number' , description: 'Maximum number of results to return (default 100, auto-paginates to collect all results up to this limit)' },
         },
         required: ['query'],
         additionalProperties: false,
@@ -80,8 +79,9 @@ async function handleSearchPages(params: any) {
   const limit = Math.min(Math.max(Number(params?.limit) || 50, 1), 100);
   const start = Number(params?.start) || 0;
   const cursor = String(params?.cursor || '').trim();
-  const maxResults = Math.max(Number.isFinite(Number(params?.maxResults)) ? Number(params?.maxResults) : 50, 0);
-  const autoPaginate = params?.autoPaginate !== false || maxResults > 0;
+  const maxResults = Math.max(Number.isFinite(Number(params?.maxResults)) ? Number(params?.maxResults) : 100, 0);
+  // Always auto-paginate to get all results up to maxResults
+  const autoPaginate = true;
   
   if (!query) {
     return toolError('MISSING_INPUT', 'Missing required input: query', { missing: ['query'] });
