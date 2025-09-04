@@ -160,7 +160,7 @@ async function handleSearchByLabelInSpace(params: any) {
   const limit = Math.min(Math.max(Number(params?.limit) || 50, 1), 100);
   const start = Number(params?.start);
   const cursor = String(params?.cursor || '').trim();
-  const maxResults = Math.max(Number.isFinite(Number(params?.maxResults)) ? Number(params?.maxResults) : 0, 0);
+  const maxResults = Math.max(Number.isFinite(Number(params?.maxResults)) ? Number(params?.maxResults) : 50, 0);
   const autoPaginate = params?.autoPaginate !== false || maxResults > 0;
   if (!label || !spaceKey) {
     const missing: string[] = [];
@@ -280,7 +280,7 @@ async function handleListPagesInSpace(params: any) {
   const limit = Math.min(Math.max(Number(params?.limit) || 50, 1), 100);
   const start = Number(params?.start);
   const cursor = String(params?.cursor || '').trim();
-  const maxResults = Math.max(Number.isFinite(Number(params?.maxResults)) ? Number(params?.maxResults) : 0, 0);
+  const maxResults = Math.max(Number.isFinite(Number(params?.maxResults)) ? Number(params?.maxResults) : 50, 0);
   const autoPaginate = params?.autoPaginate !== false || maxResults > 0;
   if (!spaceKey) {
     return toolError('MISSING_INPUT', 'Missing required input: spaceKey', { missing: ['spaceKey'] });
@@ -395,11 +395,11 @@ async function handleSearchPages(params: any) {
   }
   const query = String((params?.query ?? params?.q ?? params?.text ?? params?.question) || '').trim();
   const spaceKey = String(params?.spaceKey || '').trim();
-  const limit = Math.min(Math.max(Number(params?.limit) || 25, 1), 100);
+  const limit = Math.min(Math.max(Number(params?.limit) || 50, 1), 100);
   const start = Number(params?.start);
   const cursor = String(params?.cursor || '').trim();
   const includeArchivedSpaces = Boolean(params?.includeArchivedSpaces);
-  const maxResults = Math.max(Number.isFinite(Number(params?.maxResults)) ? Number(params?.maxResults) : 0, 0);
+  const maxResults = Math.max(Number.isFinite(Number(params?.maxResults)) ? Number(params?.maxResults) : 50, 0);
   const autoPaginate = params?.autoPaginate !== false || maxResults > 0;
   if (!query) {
     return toolError('MISSING_INPUT', 'Missing required input: query', { missing: ['query'] });
