@@ -417,14 +417,25 @@ const portOrPipe = !isWindows
   : cleanedPort && !/^\d+$/.test(cleanedPort) ? cleanedPort : numericEnvPort ?? defaultPort;
 
 console.log(`Node version: ${process.version}`);
+console.log(`Environment: ${isAzure ? 'Azure' : 'Local'}`);
+console.log(`Platform: ${process.platform}`);
+console.log(`Environment variables: PORT=${rawPort}, WEBSITE_SITE_NAME=${process.env.WEBSITE_SITE_NAME}`);
 console.log(`Resolved PORT: ${rawPort ?? '(undefined)'} | platform=${process.platform} | azure=${isAzure} -> using ${typeof portOrPipe === 'string' ? portOrPipe : `port ${portOrPipe}`}`);
 
 process.on('unhandledRejection', (reason) => console.error('UnhandledRejection:', reason));
 process.on('uncaughtException', (err) => console.error('UncaughtException:', err));
 
-if (typeof portOrPipe === 'string') {
-  app.listen(portOrPipe, () => console.log(`MCP server listening on ${portOrPipe}`));
-} else {
-  const numericPort = typeof portOrPipe === 'number' ? portOrPipe : parseInt(String(portOrPipe), 10);
-  app.listen(numericPort, '127.0.0.1', () => console.log(`MCP server listening on port ${numericPort}`));
+try {
+  if (typeof portOrPipe === 'string') {
+    app.listen(portOrPipe, () => console.log(`MCP server listening on ${portOrPipe}`));
+  } else {
+    // Azure App Service expects the app to listen on all interfaces (0.0.0.0)
+    // rather than just localhost (127.0.0.1)
+    const host = isAzure ? '0.0.0.0' : '127.0.0.1';
+    const numericPort = typeof portOrPipe === 'number' ? portOrPipe : parseInt(String(portOrPipe), 10);
+    app.listen(numericPort, host, () => console.log(`MCP server listening on ${host}:${numericPort}`));
+  }
+} catch (error) {
+  console.error('Failed to start server:', error);
+  process.exit(1);
 }
