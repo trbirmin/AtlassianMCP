@@ -51,7 +51,7 @@ function getToolDescriptors() {
           start: { type: 'number', description: 'Offset index for pagination (ignored when cursor is provided)' },
           cursor: { type: 'string', description: 'Opaque cursor from a previous response for next/prev page' },
           includeArchivedSpaces: { type: 'boolean', description: 'Include archived spaces in results' },
-          maxResults: { type: 'number' , description: 'Maximum number of results to return (default 100, auto-paginates to collect all results up to this limit)' },
+          maxResults: { type: 'number' , description: 'Maximum number of results to return (default 25, or 50 if "all results" is requested)' },
         },
         required: ['query'],
         additionalProperties: false,
@@ -79,9 +79,21 @@ async function handleSearchPages(params: any) {
   const limit = Math.min(Math.max(Number(params?.limit) || 50, 1), 100);
   const start = Number(params?.start) || 0;
   const cursor = String(params?.cursor || '').trim();
-  const maxResults = Math.max(Number.isFinite(Number(params?.maxResults)) ? Number(params?.maxResults) : 100, 0);
-  // Always auto-paginate to get all results up to maxResults
+  
+  // Check if the query explicitly asks for "all results"
+  const requestsAllResults = /\b(all|every|full|complete)\s+(result|results|page|pages|record|records)\b/i.test(query);
+  
+  // Set a safer default limit to avoid token limit errors
+  // Use 50 for queries that specifically ask for all results, otherwise use 25
+  const defaultMaxResults = requestsAllResults ? 50 : 25;
+  
+  // Set maxResults with appropriate limits to avoid token overflow
+  const maxResults = Math.max(Number.isFinite(Number(params?.maxResults)) ? Number(params?.maxResults) : defaultMaxResults, 0);
+  
+  // Always auto-paginate, but respect the maxResults limit
   const autoPaginate = true;
+  
+  console.log(`Search query: "${query}", maxResults: ${maxResults}, requestsAllResults: ${requestsAllResults}`);
   
   if (!query) {
     return toolError('MISSING_INPUT', 'Missing required input: query', { missing: ['query'] });
@@ -178,10 +190,21 @@ async function handleSearchPages(params: any) {
         : '';
       
       pageCount++;
-    } while (autoPaginate && nextCursor && (maxResults === 0 || collected.length < maxResults) && pageCount < 50);
+      
+      // Log current progress
+      console.log(`Fetched page ${pageCount}, total results so far: ${collected.length}, maxResults: ${maxResults}`);
+      
+      // If we already have a significant number of results, we should stop to avoid token limit errors
+      if (collected.length >= maxResults) {
+        console.log(`Reached maxResults limit (${maxResults}), stopping pagination`);
+        break;
+      }
+    } while (autoPaginate && nextCursor && pageCount < 5); // Limit to maximum 5 pages to be safe
     
-    // Prepare the results
-    const results = collected.slice(0, maxResults > 0 ? maxResults : undefined);
+    console.log(`Search complete. Total results: ${collected.length}, pages fetched: ${pageCount}`);
+    
+    // Prepare the results - strictly enforce the maxResults limit
+    const results = collected.slice(0, maxResults);
     const data = firstPage || { start: start || 0, limit, size: results.length, _links: {} };
     const links = (data?._links || {}) as any;
     
