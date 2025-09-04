@@ -71,7 +71,7 @@ function getToolDescriptors() {
           start: { type: 'number', description: 'Offset index for pagination (ignored when cursor is provided)' },
           cursor: { type: 'string', description: 'Opaque cursor from a previous response for next/prev page' },
           includeArchivedSpaces: { type: 'boolean', description: 'Include archived spaces in results' },
-          maxResults: { type: 'number', description: 'When set, auto-paginates until this many results are collected (omit for full traversal)' },
+          maxResults: { type: 10 , description: 'When set, auto-paginates until this many results are collected (omit for full traversal)' },
           autoPaginate: { type: 'boolean', description: 'Defaults to true. Auto-paginates using cursor until maxResults or no next page' },
         },
         required: ['query'],
