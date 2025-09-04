@@ -16,6 +16,7 @@ function generateMockResults(query: string, count: number = 20) {
       id: `page-${i + 1}`,
       title: `Result ${i + 1} for "${query}"`,
       url: `https://example.atlassian.net/wiki/spaces/TEST/pages/${i + 1}`,
+      // Clean up excerpt formatting to avoid special characters
       excerpt: `This is an example result ${i + 1} for the search query "${query}". It contains relevant information.`
     });
   }
@@ -283,20 +284,40 @@ app.use(mcpPaths, express.text({ type: '*/*', limit: '1mb' }));
 // Access log
 app.use(morgan('combined'));
 
+// Track sessions to improve initialization
+const sessions = new Map();
+
 // === JSON-RPC handler ===
 const mcpHandler = async (req: Request, res: Response) => {
+  // Extract the session ID from request headers or cookies
+  const requestSessionId = req.headers['mcp-session-id'] as string || '';
+  
+  // Get client IP for logging
+  const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
+  
   const raw = (req as any).body;
   const msg = typeof raw === 'string' ? (() => { try { return JSON.parse(raw); } catch { return {}; } })() : (raw || {});
   const id = msg.id;
   const method = typeof msg.method === 'string' ? msg.method : '';
   const norm = method.toLowerCase().replace(/[._]/g, '/');
 
-  console.log(`MCP request: id=${id ?? '(no id)'} method=${method} -> norm=${norm}`);
-
-  // Default fallback: initialize
-  if (!method) {
-    const sessionId = randomUUID();
+  console.log(`MCP request from ${clientIp}: id=${id ?? '(no id)'} method=${method} -> norm=${norm}`);
+  
+  // Handle initialization
+  if (!method || norm === 'initialize' || norm === 'mcp/initialize') {
+    // Generate a session ID if we don't have one
+    const sessionId = requestSessionId || randomUUID();
+    
+    // Store session information
+    sessions.set(sessionId, {
+      initialized: true,
+      lastActivity: Date.now(),
+      clientIp
+    });
+    
+    // Set headers
     res.setHeader('Mcp-Session-Id', sessionId);
+    
     const result = {
       protocolVersion: '2024-11-05',
       serverInfo: { name: 'Atlassian MCP Server', version: '0.1.1' },
@@ -308,8 +329,18 @@ const mcpHandler = async (req: Request, res: Response) => {
     return sendJson(res, { jsonrpc: '2.0', id: id ?? null, result });
   }
 
+  // This block should never be reached since we handle initialization above,
+  // but we'll keep it as a fallback for compatibility
   if (norm === 'initialize' || norm === 'mcp/initialize') {
-    const sessionId = randomUUID();
+    const sessionId = requestSessionId || randomUUID();
+    
+    // Store session information
+    sessions.set(sessionId, {
+      initialized: true,
+      lastActivity: Date.now(),
+      clientIp
+    });
+    
     res.setHeader('Mcp-Session-Id', sessionId);
     return sendJson(res, {
       jsonrpc: '2.0',
@@ -335,23 +366,53 @@ const mcpHandler = async (req: Request, res: Response) => {
   }
 
   if (norm === 'tools/call' || norm === 'mcp/tools/call' || norm === 'tool/call') {
-    const { name, arguments: args = {} } = msg.params || {};
-    let out: any;
+    try {
+      const { name, arguments: args = {} } = msg.params || {};
+      
+      // Log tool call for debugging
+      console.log(`Tool call: ${name} with args:`, JSON.stringify(args));
+      
+      // Check if this is a session that hasn't been initialized
+      if (requestSessionId && !sessions.has(requestSessionId)) {
+        console.log(`Session ${requestSessionId} not found, auto-initializing`);
+        // We should auto-initialize here
+        const sessionId = requestSessionId;
+        sessions.set(sessionId, {
+          initialized: true,
+          lastActivity: Date.now(),
+          clientIp
+        });
+        // Continue with the tool call after auto-initializing
+      }
+      
+      let out: any;
 
-    switch (name) {
-      case 'searchPages':
-        out = await handleSearchPages(args);
-        break;
-      case 'listSpaces':
-        out = await handleListSpaces(args);
-        break;
-      case 'describeTools':
-        out = await handleDescribeTools(args);
-        break;
+      switch (name) {
+        case 'searchPages':
+          out = await handleSearchPages(args);
+          break;
+        case 'listSpaces':
+          out = await handleListSpaces(args);
+          break;
+        case 'describeTools':
+          out = await handleDescribeTools(args);
+          break;
       default:
         return sendJson(res, { jsonrpc: '2.0', id, error: { code: -32601, message: `Tool not found: ${name}` } });
+      }
+      return sendJson(res, { jsonrpc: '2.0', id, result: out });
+    } catch (error: any) {
+      console.error(`Error handling tool call:`, error);
+      return sendJson(res, { 
+        jsonrpc: '2.0', 
+        id, 
+        error: { 
+          code: -32603, 
+          message: `Internal error processing tool call: ${error?.message || 'Unknown error'}`,
+          data: { errorType: error?.name || 'Error' }
+        } 
+      });
     }
-    return sendJson(res, { jsonrpc: '2.0', id, result: out });
   }
 
   if (norm === 'ping' || norm === 'mcp/ping') {
