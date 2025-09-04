@@ -51,7 +51,7 @@ function getToolDescriptors() {
           start: { type: 'number', description: 'Offset index for pagination (ignored when cursor is provided)' },
           cursor: { type: 'string', description: 'Opaque cursor from a previous response for next/prev page' },
           includeArchivedSpaces: { type: 'boolean', description: 'Include archived spaces in results' },
-          maxResults: { type: 'number' , description: 'Maximum number of results to return (default 25, or 50 if "all results" is requested)' },
+          maxResults: { type: 'number' , description: 'Maximum number of results to return (default 50)' },
         },
         required: ['query'],
         additionalProperties: false,
@@ -83,9 +83,8 @@ async function handleSearchPages(params: any) {
   // Check if the query explicitly asks for "all results"
   const requestsAllResults = /\b(all|every|full|complete)\s+(result|results|page|pages|record|records)\b/i.test(query);
   
-  // Set a safer default limit to avoid token limit errors
-  // Use 50 for queries that specifically ask for all results, otherwise use 30
-  const defaultMaxResults = requestsAllResults ? 50 : 30;
+  // Always use 50 for maximum results
+  const defaultMaxResults = 50;
   
   // Set maxResults with appropriate limits to avoid token overflow
   const maxResults = Math.max(Number.isFinite(Number(params?.maxResults)) ? Number(params?.maxResults) : defaultMaxResults, 0);
@@ -202,7 +201,7 @@ async function handleSearchPages(params: any) {
         console.log(`Reached maxResults limit (${maxResults}), stopping pagination`);
         break;
       }
-    } while (autoPaginate && nextCursor && pageCount < 5); // Limit to maximum 5 pages to be safe
+    } while (autoPaginate && nextCursor && pageCount < 10); // Increased from 5 to 10 pages for more results
     
     console.log(`Search complete. Total results: ${collected.length}, pages fetched: ${pageCount}`);
     
@@ -376,7 +375,7 @@ const mcpHandler = async (req: Request, res: Response) => {
       capabilities: { tools: { list: true, call: true } },
       tools: getToolDescriptors(),
       instructions:
-        'Policy: When the user asks about Confluence content, always call the searchPages tool and return the results. Default to the searchPages tool for any query: set query to the user text. Always show all available results to the user, displaying as many results as possible.',
+        'Policy: When the user asks about Confluence content, always call the searchPages tool and return the results. Default to the searchPages tool for any query: set query to the user text. IMPORTANT: ALWAYS display ALL returned results to the user (up to 50). Do not truncate or summarize the results list. Format each result on its own line with the title and URL.',
     };
     return sendJson(res, { jsonrpc: '2.0', id: id ?? null, result });
   }
@@ -405,7 +404,7 @@ const mcpHandler = async (req: Request, res: Response) => {
         capabilities: { tools: { list: true, call: true } },
         tools: getToolDescriptors(),
         instructions:
-          'Policy: When the user asks about Confluence content, always call the searchPages tool and return the results. Default to the searchPages tool for any query: set query to the user text. Always show all available results to the user, displaying as many results as possible.',
+          'Policy: When the user asks about Confluence content, always call the searchPages tool and return the results. Default to the searchPages tool for any query: set query to the user text. IMPORTANT: ALWAYS display ALL returned results to the user (up to 50). Do not truncate or summarize the results list. Format each result on its own line with the title and URL.',
       },
     });
   }
