@@ -329,6 +329,30 @@ const mcpHandler = async (req: Request, res: Response) => {
 
   console.log(`MCP request from ${clientIp}: id=${id ?? '(no id)'} method=${method} -> norm=${norm}`);
   
+  // Always create a session ID to ensure session tracking
+  const sessionId = requestSessionId || randomUUID();
+  if (!requestSessionId) {
+    console.log(`No session ID provided, creating new session: ${sessionId}`);
+    res.setHeader('Mcp-Session-Id', sessionId);
+    sessions.set(sessionId, {
+      initialized: false,
+      lastActivity: Date.now(),
+      clientIp
+    });
+  } else if (!sessions.has(requestSessionId)) {
+    console.log(`Session ${requestSessionId} not found, creating it`);
+    sessions.set(sessionId, {
+      initialized: false,
+      lastActivity: Date.now(),
+      clientIp
+    });
+  } else {
+    // Update last activity
+    const session = sessions.get(requestSessionId);
+    session.lastActivity = Date.now();
+    sessions.set(requestSessionId, session);
+  }
+  
   // Handle initialization
   if (!method || norm === 'initialize' || norm === 'mcp/initialize') {
     // Generate a session ID if we don't have one
@@ -347,7 +371,7 @@ const mcpHandler = async (req: Request, res: Response) => {
     console.log(`Initializing session ${sessionId} for client ${clientIp}`);
     
     const result = {
-      protocolVersion: '2024-11-05',
+      protocolVersion: '2023-07-01',  // Use an older protocol version for better compatibility
       serverInfo: { name: 'Atlassian MCP Server', version: '0.1.1' },
       capabilities: { tools: { list: true, call: true } },
       tools: getToolDescriptors(),
@@ -376,7 +400,7 @@ const mcpHandler = async (req: Request, res: Response) => {
       jsonrpc: '2.0',
       id,
       result: {
-        protocolVersion: '2024-11-05',
+        protocolVersion: '2023-07-01',  // Use an older protocol version for better compatibility
         serverInfo: { name: 'Atlassian MCP Server', version: '0.1.1' },
         capabilities: { tools: { list: true, call: true } },
         tools: getToolDescriptors(),
@@ -388,12 +412,29 @@ const mcpHandler = async (req: Request, res: Response) => {
 
   if (norm === 'notifications/initialized' || norm === 'mcp/notifications/initialized') {
     console.log(`Received notification acknowledgment for session ${requestSessionId}`);
+    
+    // Always return a proper response with id:null if no id provided
     if (id === undefined || id === null) {
-      console.log(`No ID in notification request, returning empty response`);
-      return res.status(200).end();
+      console.log(`No ID in notification request, returning structured acknowledgment`);
+      return sendJson(res, { 
+        jsonrpc: '2.0', 
+        id: null, 
+        result: { 
+          acknowledged: true,
+          message: "Notification acknowledged" 
+        } 
+      });
     }
+    
     console.log(`Acknowledging notification with ID ${id}`);
-    return sendJson(res, { jsonrpc: '2.0', id, result: { acknowledged: true } });
+    return sendJson(res, { 
+      jsonrpc: '2.0', 
+      id, 
+      result: { 
+        acknowledged: true,
+        message: "Notification acknowledged" 
+      } 
+    });
   }
 
   if (norm === 'tools/list' || norm === 'mcp/tools/list') {
