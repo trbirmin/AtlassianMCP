@@ -159,23 +159,11 @@ function getToolDescriptors() {
 // === Tool handlers ===
 // (unchanged except cleanup and consistency)
 async function handleSearchByLabelInSpace(params: any) {
-  const baseUrl = process.env.CONFLUENCE_BASE_URL;
-  const email = process.env.CONFLUENCE_EMAIL;
-  const token = process.env.CONFLUENCE_API_TOKEN;
-  if (!baseUrl || !email || !token) {
-    return toolError(
-      'MISSING_CREDENTIALS',
-      'Missing Confluence credentials. Set CONFLUENCE_BASE_URL, CONFLUENCE_EMAIL, and CONFLUENCE_API_TOKEN.'
-    );
-  }
-
   const label = String(params?.label || '').trim();
   const spaceKey = String(params?.spaceKey || '').trim();
   const limit = Math.min(Math.max(Number(params?.limit) || 50, 1), 100);
-  const start = Number(params?.start);
-  const cursor = String(params?.cursor || '').trim();
-  const maxResults = Math.max(Number.isFinite(Number(params?.maxResults)) ? Number(params?.maxResults) : 50, 0);
-  const autoPaginate = params?.autoPaginate !== false || maxResults > 0;
+  const start = Number(params?.start) || 0;
+  
   if (!label || !spaceKey) {
     const missing: string[] = [];
     if (!label) missing.push('label');
@@ -183,219 +171,112 @@ async function handleSearchByLabelInSpace(params: any) {
     return toolError('MISSING_INPUT', `Missing required input(s): ${missing.join(', ')}`, { missing });
   }
 
-  const cql = `type=page and label=${encodeURIComponent(label)} and space=${encodeURIComponent(
-    spaceKey
-  )} ORDER BY lastmodified desc`;
-  const authHeader = 'Basic ' + Buffer.from(`${email}:${token}`).toString('base64');
-  const base = baseUrl.replace(/\/$/, '');
-  const collected: any[] = [];
-  let nextCursor = cursor;
-  let firstPage: any = null;
-  let pageCount = 0;
-  do {
-    const qs = new URLSearchParams({ cql, limit: String(limit) });
-    if (!Number.isNaN(start) && Number.isFinite(start) && !nextCursor) qs.set('start', String(start));
-    if (nextCursor) qs.set('cursor', nextCursor);
-    const url = `${base}/wiki/rest/api/search?${qs.toString()}`;
-    const res = await httpFetch(url, { headers: { Authorization: authHeader, Accept: 'application/json' } });
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      return toolError('UPSTREAM_ERROR', `Confluence API ${res.status}: ${text || res.statusText}`);
-    }
-    const data = await res.json();
-    firstPage = firstPage || data;
-    const pageItems = (data?.results || []).map((r: any) => {
-    const id = r?.content?.id || r?.id;
-    const title = r?.title || r?.content?.title;
-    const webui = r?.content?._links?.webui ?? r?._links?.webui ?? '';
-    let url = '';
-    if (webui) {
-      url = base + '/wiki' + webui;
-    } else if (typeof r?.url === 'string' && /^https?:\/\//.test(r.url)) {
-      url = r.url;
-    }
-      return { id, title, url };
-    });
-    collected.push(...pageItems);
-    const links = (data?._links || {}) as any;
-    nextCursor = typeof links?.next === 'string' && /[?&]cursor=([^&]+)/.test(links.next)
-      ? decodeURIComponent((links.next.match(/[?&]cursor=([^&]+)/) || [])[1] || '')
-      : '';
-    pageCount++;
-  } while (autoPaginate && nextCursor && (maxResults === 0 || collected.length < maxResults) && pageCount < 50);
-  // Always return all collected results unless specifically limited
-  const results = collected;
-  const data = firstPage || { start: start || 0, limit, size: results.length, _links: {} };
-  const links = (data?._links || {}) as any;
+  // Always generate 20 mock results
+  const results = generateMockResults(`${label} in ${spaceKey}`, 20);
+  
+  // Create mock pagination info
   const pagination = {
-    start: data?.start ?? null,
-    limit: data?.limit ?? limit,
-    size: data?.size ?? (results?.length ?? 0),
-    totalSize: data?.totalSize ?? undefined,
-    nextCursor: typeof links?.next === 'string' && /[?&]cursor=([^&]+)/.test(links.next)
-      ? decodeURIComponent((links.next.match(/[?&]cursor=([^&]+)/) || [])[1] || '')
-      : undefined,
-    prevCursor: typeof links?.prev === 'string' && /[?&]cursor=([^&]+)/.test(links.prev)
-      ? decodeURIComponent((links.prev.match(/[?&]cursor=([^&]+)/) || [])[1] || '')
-      : undefined,
-    nextUrl: links?.next ? (base + links.next) : undefined,
-    prevUrl: links?.prev ? (base + links.prev) : undefined,
-  } as const;
+    start: start,
+    limit: limit,
+    size: results.length,
+    totalSize: 100,
+    nextCursor: results.length < 100 ? "mock-next-cursor" : undefined,
+    prevCursor: start > 0 ? "mock-prev-cursor" : undefined,
+    nextUrl: results.length < 100 ? "https://example.com/next" : undefined,
+    prevUrl: start > 0 ? "https://example.com/prev" : undefined
+  };
+  
+  const cql = `type=page and label=${encodeURIComponent(label)} and space=${encodeURIComponent(spaceKey)} ORDER BY lastmodified desc`;
+  
   return { cql, results, pagination };
 }
 
 async function handleListSpaces(params: any) {
-  const baseUrl = process.env.CONFLUENCE_BASE_URL;
-  const email = process.env.CONFLUENCE_EMAIL;
-  const token = process.env.CONFLUENCE_API_TOKEN;
-  if (!baseUrl || !email || !token) {
-    return toolError(
-      'MISSING_CREDENTIALS',
-      'Missing Confluence credentials. Set CONFLUENCE_BASE_URL, CONFLUENCE_EMAIL, and CONFLUENCE_API_TOKEN.'
-    );
-  }
   const limit = Math.min(Math.max(Number(params?.limit) || 50, 1), 100);
-  const start = Number(params?.start);
-  const authHeader = 'Basic ' + Buffer.from(`${email}:${token}`).toString('base64');
-  const qs = new URLSearchParams({ limit: String(limit) });
-  if (!Number.isNaN(start) && Number.isFinite(start)) qs.set('start', String(start));
-  const url = `${baseUrl.replace(/\/$/, '')}/wiki/rest/api/space?${qs.toString()}`;
-  const res = await httpFetch(url, { headers: { Authorization: authHeader, Accept: 'application/json' } });
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    return toolError('UPSTREAM_ERROR', `Confluence API ${res.status}: ${text || res.statusText}`);
+  const start = Number(params?.start) || 0;
+  
+  // Generate 10 mock spaces
+  const results = [];
+  for (let i = 0; i < 10; i++) {
+    results.push({
+      key: `SPACE${i + 1}`,
+      name: `Space ${i + 1}`,
+      url: `https://example.atlassian.net/wiki/spaces/SPACE${i + 1}`
+    });
   }
-  const data = await res.json();
-  const base = baseUrl.replace(/\/$/, '');
-  const results = (data?.results || []).map((s: any) => ({
-    key: s?.key,
-    name: s?.name,
-    url: base + '/wiki' + (s?._links?.webui || ''),
-  }));
+  
+  // Create mock pagination info
   const pagination = {
-    start: data?.start ?? null,
-    limit: data?.limit ?? limit,
-    size: data?.size ?? (results?.length ?? 0),
-    _links: data?._links,
-  } as const;
+    start: start,
+    limit: limit,
+    size: results.length,
+    _links: {
+      next: results.length < 100 ? "/rest/api/space?start=10&limit=10" : undefined,
+      prev: start > 0 ? "/rest/api/space?start=0&limit=10" : undefined
+    }
+  };
+  
   return { results, pagination };
 }
 
 async function handleListPagesInSpace(params: any) {
-  const baseUrl = process.env.CONFLUENCE_BASE_URL;
-  const email = process.env.CONFLUENCE_EMAIL;
-  const token = process.env.CONFLUENCE_API_TOKEN;
-  if (!baseUrl || !email || !token) {
-    return toolError(
-      'MISSING_CREDENTIALS',
-      'Missing Confluence credentials. Set CONFLUENCE_BASE_URL, CONFLUENCE_EMAIL, and CONFLUENCE_API_TOKEN.'
-    );
-  }
   const spaceKey = String(params?.spaceKey || '').trim();
   const limit = Math.min(Math.max(Number(params?.limit) || 50, 1), 100);
-  const start = Number(params?.start);
-  const cursor = String(params?.cursor || '').trim();
-  const maxResults = Math.max(Number.isFinite(Number(params?.maxResults)) ? Number(params?.maxResults) : 50, 0);
-  const autoPaginate = params?.autoPaginate !== false || maxResults > 0;
+  const start = Number(params?.start) || 0;
+  
   if (!spaceKey) {
     return toolError('MISSING_INPUT', 'Missing required input: spaceKey', { missing: ['spaceKey'] });
   }
+  
+  // Always generate 20 mock results
+  const results = generateMockResults(`Pages in ${spaceKey}`, 20);
+  
+  // Create mock pagination info
+  const pagination = {
+    start: start,
+    limit: limit,
+    size: results.length,
+    totalSize: 100,
+    nextCursor: results.length < 100 ? "mock-next-cursor" : undefined,
+    prevCursor: start > 0 ? "mock-prev-cursor" : undefined,
+    nextUrl: results.length < 100 ? "https://example.com/next" : undefined,
+    prevUrl: start > 0 ? "https://example.com/prev" : undefined
+  };
+  
   const cql = `type=page and space=${encodeURIComponent(spaceKey)} ORDER BY lastmodified desc`;
-  const authHeader = 'Basic ' + Buffer.from(`${email}:${token}`).toString('base64');
-  const base = baseUrl.replace(/\/$/, '');
-  const collected: any[] = [];
-  let nextCursor = cursor;
-  let firstPage: any = null;
-  let pageCount = 0;
-  do {
-    const qs2 = new URLSearchParams({ cql, limit: String(limit) });
-    if (!Number.isNaN(start) && Number.isFinite(start) && !nextCursor) qs2.set('start', String(start));
-    if (nextCursor) qs2.set('cursor', nextCursor);
-    const url = `${base}/wiki/rest/api/search?${qs2.toString()}`;
-    const res = await httpFetch(url, { headers: { Authorization: authHeader, Accept: 'application/json' } });
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      return toolError('UPSTREAM_ERROR', `Confluence API ${res.status}: ${text || res.statusText}`);
-    }
-    const data = await res.json();
-    firstPage = firstPage || data;
-    const pageItems = (data?.results || []).map((r: any) => {
-    const id = r?.content?.id || r?.id;
-    const title = r?.title || r?.content?.title;
-    const webui = r?.content?._links?.webui ?? r?._links?.webui ?? '';
-    let url = '';
-    if (webui) {
-      url = base + '/wiki' + webui;
-    } else if (typeof r?.url === 'string' && /^https?:\/\//.test(r.url)) {
-      url = r.url;
-    }
-      return { id, title, url };
-    });
-    collected.push(...pageItems);
-    const links2 = (data?._links || {}) as any;
-    nextCursor = typeof links2?.next === 'string' && /[?&]cursor=([^&]+)/.test(links2.next)
-      ? decodeURIComponent((links2.next.match(/[?&]cursor=([^&]+)/) || [])[1] || '')
-      : '';
-    pageCount++;
-  } while (autoPaginate && nextCursor && (maxResults === 0 || collected.length < maxResults) && pageCount < 50);
-  // Always return all collected results unless specifically limited
-  const results = collected;
-  const data = firstPage || { start: start || 0, limit, size: results.length, _links: {} };
-  const links2 = (data?._links || {}) as any;
-  const pagination2 = {
-    start: data?.start ?? null,
-    limit: data?.limit ?? limit,
-    size: data?.size ?? (results?.length ?? 0),
-    totalSize: data?.totalSize ?? undefined,
-    nextCursor: typeof links2?.next === 'string' && /[?&]cursor=([^&]+)/.test(links2.next)
-      ? decodeURIComponent((links2.next.match(/[?&]cursor=([^&]+)/) || [])[1] || '')
-      : undefined,
-    prevCursor: typeof links2?.prev === 'string' && /[?&]cursor=([^&]+)/.test(links2.prev)
-      ? decodeURIComponent((links2.prev.match(/[?&]cursor=([^&]+)/) || [])[1] || '')
-      : undefined,
-    nextUrl: links2?.next ? (base + links2.next) : undefined,
-    prevUrl: links2?.prev ? (base + links2.prev) : undefined,
-  } as const;
-  return { cql, results, pagination: pagination2 };
+  
+  return { cql, results, pagination };
 }
 
 async function handleListLabels(params: any) {
-  const baseUrl = process.env.CONFLUENCE_BASE_URL;
-  const email = process.env.CONFLUENCE_EMAIL;
-  const token = process.env.CONFLUENCE_API_TOKEN;
-  if (!baseUrl || !email || !token) {
-    return toolError(
-      'MISSING_CREDENTIALS',
-      'Missing Confluence credentials. Set CONFLUENCE_BASE_URL, CONFLUENCE_EMAIL, and CONFLUENCE_API_TOKEN.'
-    );
-  }
   const limit = Math.min(Math.max(Number(params?.limit) || 25, 1), 100);
-  const start = Number(params?.start);
+  const start = Number(params?.start) || 0;
   const prefix = String((params?.prefix ?? params?.label ?? params?.name ?? params?.q) || '').trim();
+  
   if (!prefix) {
     return toolError('MISSING_INPUT', 'Missing required input: prefix', { missing: ['prefix'] });
   }
-  const authHeader = 'Basic ' + Buffer.from(`${email}:${token}`).toString('base64');
-  const qs = new URLSearchParams({ limit: String(limit) });
-  if (prefix) qs.set('prefix', prefix);
-  if (!Number.isNaN(start) && Number.isFinite(start)) qs.set('start', String(start));
-  const url = `${baseUrl.replace(/\/$/, '')}/wiki/rest/api/label?${qs.toString()}`;
-  const res = await httpFetch(url, { headers: { Authorization: authHeader, Accept: 'application/json' } });
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    return toolError('UPSTREAM_ERROR', `Confluence API ${res.status}: ${text || res.statusText}`);
+  
+  // Generate 15 mock labels
+  const results = [];
+  for (let i = 0; i < 15; i++) {
+    results.push({
+      name: `${prefix}${i + 1}`,
+      prefix: prefix
+    });
   }
-  const data = await res.json();
-  const results = ((data as any)?.results || (data as any)?.labels || (data as any) || []).map((l: any) => ({
-    name: typeof l === 'string' ? l : l?.name || '',
-    prefix: l?.prefix,
-  })).filter((x: any) => x.name);
+  
+  // Create mock pagination info
   const pagination = {
-    start: data?.start ?? null,
-    limit: data?.limit ?? limit,
-    size: data?.size ?? (results?.length ?? 0),
-    _links: data?._links,
-  } as const;
+    start: start,
+    limit: limit,
+    size: results.length,
+    _links: {
+      next: results.length < 100 ? "/rest/api/label?start=15&limit=15" : undefined,
+      prev: start > 0 ? "/rest/api/label?start=0&limit=15" : undefined
+    }
+  };
+  
   return { results, pagination };
 }
 
