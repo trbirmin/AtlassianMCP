@@ -166,7 +166,7 @@ async function handleSearchPages(params: any) {
       const data = await res.json();
       firstPage = firstPage || data;
       
-      const pageItems = (data?.results || []).map((r: any) => {
+      const pageItems = (data?.results || []).map((r: any, index: number) => {
         const id = r?.content?.id || r?.id;
         const title = r?.title || r?.content?.title;
         const webui = r?.content?._links?.webui ?? r?._links?.webui ?? '';
@@ -178,8 +178,11 @@ async function handleSearchPages(params: any) {
           url = r.url;
         }
         
+        // Add result number to title to help bot display more results
+        const enhancedTitle = `[${index + 1}] ${title}`;
+        
         // Excerpt removed as requested
-        return { id, title, url };
+        return { id, title: enhancedTitle, url };
       });
       
       collected.push(...pageItems);
@@ -209,6 +212,11 @@ async function handleSearchPages(params: any) {
     // Log the exact number of results being returned
     console.log(`Returning ${results.length} results to the client`);
     
+    // If we have results, add a summary to the first result's title
+    if (results.length > 0) {
+      results[0].title = `FOUND: ${results.length} results (out of ${collected.length} total matches) - ${results[0].title}`;
+    }
+    
     // Force include total count in the results object itself so the client knows how many results we're returning
     const resultWithCount = {
       items: results,
@@ -234,12 +242,20 @@ async function handleSearchPages(params: any) {
       prevUrl: links?.prev ? (base + links.prev) : undefined,
     };
     
-    return { cql, results: resultWithCount.items, resultCount: resultWithCount.count, totalAvailable: resultWithCount.totalAvailable, pagination };
+    return { 
+      cql, 
+      resultSummary: `Found ${resultWithCount.count} results out of ${resultWithCount.totalAvailable} total matches for "${query}"`,
+      results: resultWithCount.items, 
+      resultCount: resultWithCount.count, 
+      totalAvailable: resultWithCount.totalAvailable, 
+      pagination 
+    };
   } catch (error: any) {
     console.error("Error fetching from Confluence API:", error);
     
     return { 
       cql: `type=page and text ~ "${query}"`,
+      resultSummary: `Found 0 results for "${query}"`,
       results: [],
       resultCount: 0,
       totalAvailable: 0,
@@ -328,13 +344,15 @@ const mcpHandler = async (req: Request, res: Response) => {
     // Set headers
     res.setHeader('Mcp-Session-Id', sessionId);
     
+    console.log(`Initializing session ${sessionId} for client ${clientIp}`);
+    
     const result = {
       protocolVersion: '2024-11-05',
       serverInfo: { name: 'Atlassian MCP Server', version: '0.1.1' },
       capabilities: { tools: { list: true, call: true } },
       tools: getToolDescriptors(),
       instructions:
-        'Policy: Never answer from model knowledge when the user asks about Confluence content. Always call tools and return their results. Default to the searchPages tool for any query phrased as search/find/lookup/question: set query to the user text and include spaceKey if the user mentions a space. Examples: "Search for Infor OS" -> {name: searchPages, arguments: {query: "Infor OS"}}; "Search MFS for onboarding" -> {name: searchPages, arguments: {query: "onboarding", spaceKey: "MFS"}}. To list available spaces, call listSpaces. If required inputs are missing, ask a clarifying question and then call the tool.',
+        'Policy: When the user asks about Confluence content, always call the searchPages tool and return the results. Default to the searchPages tool for any query: set query to the user text. Always show all available results to the user, displaying as many results as possible.',
     };
     return sendJson(res, { jsonrpc: '2.0', id: id ?? null, result });
   }
@@ -351,6 +369,8 @@ const mcpHandler = async (req: Request, res: Response) => {
       clientIp
     });
     
+    console.log(`Fallback: Initializing session ${sessionId} for client ${clientIp}`);
+    
     res.setHeader('Mcp-Session-Id', sessionId);
     return sendJson(res, {
       jsonrpc: '2.0',
@@ -361,13 +381,18 @@ const mcpHandler = async (req: Request, res: Response) => {
         capabilities: { tools: { list: true, call: true } },
         tools: getToolDescriptors(),
         instructions:
-          'Policy: Never answer from model knowledge when the user asks about Confluence content. Always call tools and return their results. Default to the searchPages tool for any query phrased as search/find/lookup/question: set query to the user text and include spaceKey if the user mentions a space. Examples: "Search for Infor OS" -> {name: searchPages, arguments: {query: "Infor OS"}}; "Search MFS for onboarding" -> {name: searchPages, arguments: {query: "onboarding", spaceKey: "MFS"}}. To list available spaces, call listSpaces. If required inputs are missing, ask a clarifying question and then call the tool.',
+          'Policy: When the user asks about Confluence content, always call the searchPages tool and return the results. Default to the searchPages tool for any query: set query to the user text. Always show all available results to the user, displaying as many results as possible.',
       },
     });
   }
 
   if (norm === 'notifications/initialized' || norm === 'mcp/notifications/initialized') {
-    if (id === undefined || id === null) return res.status(200).end();
+    console.log(`Received notification acknowledgment for session ${requestSessionId}`);
+    if (id === undefined || id === null) {
+      console.log(`No ID in notification request, returning empty response`);
+      return res.status(200).end();
+    }
+    console.log(`Acknowledging notification with ID ${id}`);
     return sendJson(res, { jsonrpc: '2.0', id, result: { acknowledged: true } });
   }
 
