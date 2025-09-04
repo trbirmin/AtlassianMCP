@@ -3,3 +3,6 @@ dist/
 .env
 npm-debug.log*
 yarn-error.log*
+*mock*
+*test-server*
+*simple-server*

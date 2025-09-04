@@ -1,13 +1,10 @@
 # Sample Azure App Service Environment Variables
 # These settings should be configured in your Azure App Service Configuration > Application settings
 
-# Required for mock data - your Confluence domain
-CUSTOM_CONFLUENCE_DOMAIN=your-domain.atlassian.net
-
-# Optional - for real Confluence API integration
-# CONFLUENCE_BASE_URL=https://your-domain.atlassian.net
-# CONFLUENCE_EMAIL=your-email@example.com
-# CONFLUENCE_API_TOKEN=your-api-token
+# Required - Confluence API credentials
+CONFLUENCE_BASE_URL=https://your-domain.atlassian.net
+CONFLUENCE_EMAIL=your-email@example.com
+CONFLUENCE_API_TOKEN=your-api-token
 
 # Server configuration - usually not needed on Azure as the platform sets PORT automatically
 # PORT=3000

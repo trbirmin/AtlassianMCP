@@ -12,31 +12,11 @@ import { randomUUID } from 'crypto';
  * - CONFLUENCE_BASE_URL: The base URL of your Confluence instance (e.g., https://your-domain.atlassian.net)
  * - CONFLUENCE_EMAIL: Your Atlassian account email
  * - CONFLUENCE_API_TOKEN: Your Atlassian API token (create at https://id.atlassian.com/manage-profile/security/api-tokens)
- * - CUSTOM_CONFLUENCE_DOMAIN: Alternative to CONFLUENCE_BASE_URL, just the domain part (e.g., your-domain.atlassian.net)
  * - PORT: The port to run the server on (default: 3000)
  */
 
 // Use global fetch if available (Node 18+), otherwise fall back to undici
 const httpFetch: typeof fetch = (globalThis as any).fetch ?? (undiciFetch as any);
-
-// Setup environment variables and defaults
-const DEFAULT_CONFLUENCE_DOMAIN = process.env.CUSTOM_CONFLUENCE_DOMAIN || "example.atlassian.net";
-console.log(`Using Confluence domain: ${DEFAULT_CONFLUENCE_DOMAIN}`);
-
-// Generate mock results (always returns 20 items)
-function generateMockResults(query: string, count: number = 20, baseUrl: string = `https://${DEFAULT_CONFLUENCE_DOMAIN}`) {
-  const results = [];
-  for (let i = 0; i < count; i++) {
-    results.push({
-      id: `page-${i + 1}`,
-      title: `Result ${i + 1} for "${query}"`,
-      url: `${baseUrl}/wiki/spaces/TEST/pages/${i + 1}`,
-      // Clean up excerpt formatting to avoid special characters
-      excerpt: `This is an example result ${i + 1} for the search query "${query}". It contains relevant information.`
-    });
-  }
-  return results;
-}
 
 // Minimal JSON utility
 function sendJson(res: Response, payload: any, status = 200) {
@@ -71,22 +51,10 @@ function getToolDescriptors() {
           start: { type: 'number', description: 'Offset index for pagination (ignored when cursor is provided)' },
           cursor: { type: 'string', description: 'Opaque cursor from a previous response for next/prev page' },
           includeArchivedSpaces: { type: 'boolean', description: 'Include archived spaces in results' },
-          maxResults: { type: 100 , description: 'When set, auto-paginates until this many results are collected (omit for full traversal)' },
+          maxResults: { type: 'number' , description: 'When set, auto-paginates until this many results are collected (omit for full traversal)' },
           autoPaginate: { type: 'boolean', description: 'Defaults to true. Auto-paginates using cursor until maxResults or no next page' },
         },
         required: ['query'],
-        additionalProperties: false,
-      },
-    },
-    {
-      name: 'listSpaces',
-      description: 'List Confluence spaces (global). Returns up to limit spaces (default 25).',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          limit: { type: 'number', description: 'Max spaces to return (default 25, max 100)' },
-          start: { type: 'number', description: 'Offset index for pagination' },
-        },
         additionalProperties: false,
       },
     },
@@ -103,128 +71,7 @@ function getToolDescriptors() {
 }
 
 // === Tool handlers ===
-// (unchanged except cleanup and consistency)
-async function handleSearchByLabelInSpace(params: any) {
-  const label = String(params?.label || '').trim();
-  const spaceKey = String(params?.spaceKey || '').trim();
-  const limit = Math.min(Math.max(Number(params?.limit) || 50, 1), 100);
-  const start = Number(params?.start) || 0;
-  
-  if (!label || !spaceKey) {
-    const missing: string[] = [];
-    if (!label) missing.push('label');
-    if (!spaceKey) missing.push('spaceKey');
-    return toolError('MISSING_INPUT', `Missing required input(s): ${missing.join(', ')}`, { missing });
-  }
-
-  // Always generate 20 mock results
-  const results = generateMockResults(`${label} in ${spaceKey}`, 20);
-  
-  // Create mock pagination info
-  const pagination = {
-    start: start,
-    limit: limit,
-    size: results.length,
-    totalSize: 100,
-    nextCursor: results.length < 100 ? "mock-next-cursor" : undefined,
-    prevCursor: start > 0 ? "mock-prev-cursor" : undefined,
-    nextUrl: results.length < 100 ? "https://example.com/next" : undefined,
-    prevUrl: start > 0 ? "https://example.com/prev" : undefined
-  };
-  
-  const cql = `type=page and label=${encodeURIComponent(label)} and space=${encodeURIComponent(spaceKey)} ORDER BY lastmodified desc`;
-  
-  return { cql, results, pagination };
-}
-
-async function handleListSpaces(params: any) {
-  const limit = Math.min(Math.max(Number(params?.limit) || 50, 1), 100);
-  const start = Number(params?.start) || 0;
-  
-  // Generate 10 mock spaces
-  const results = [];
-  for (let i = 0; i < 10; i++) {
-    results.push({
-      key: `SPACE${i + 1}`,
-      name: `Space ${i + 1}`,
-      url: `https://example.atlassian.net/wiki/spaces/SPACE${i + 1}`
-    });
-  }
-  
-  // Create mock pagination info
-  const pagination = {
-    start: start,
-    limit: limit,
-    size: results.length,
-    _links: {
-      next: results.length < 100 ? "/rest/api/space?start=10&limit=10" : undefined,
-      prev: start > 0 ? "/rest/api/space?start=0&limit=10" : undefined
-    }
-  };
-  
-  return { results, pagination };
-}
-
-async function handleListPagesInSpace(params: any) {
-  const spaceKey = String(params?.spaceKey || '').trim();
-  const limit = Math.min(Math.max(Number(params?.limit) || 50, 1), 100);
-  const start = Number(params?.start) || 0;
-  
-  if (!spaceKey) {
-    return toolError('MISSING_INPUT', 'Missing required input: spaceKey', { missing: ['spaceKey'] });
-  }
-  
-  // Always generate 20 mock results
-  const results = generateMockResults(`Pages in ${spaceKey}`, 20);
-  
-  // Create mock pagination info
-  const pagination = {
-    start: start,
-    limit: limit,
-    size: results.length,
-    totalSize: 100,
-    nextCursor: results.length < 100 ? "mock-next-cursor" : undefined,
-    prevCursor: start > 0 ? "mock-prev-cursor" : undefined,
-    nextUrl: results.length < 100 ? "https://example.com/next" : undefined,
-    prevUrl: start > 0 ? "https://example.com/prev" : undefined
-  };
-  
-  const cql = `type=page and space=${encodeURIComponent(spaceKey)} ORDER BY lastmodified desc`;
-  
-  return { cql, results, pagination };
-}
-
-async function handleListLabels(params: any) {
-  const limit = Math.min(Math.max(Number(params?.limit) || 25, 1), 100);
-  const start = Number(params?.start) || 0;
-  const prefix = String((params?.prefix ?? params?.label ?? params?.name ?? params?.q) || '').trim();
-  
-  if (!prefix) {
-    return toolError('MISSING_INPUT', 'Missing required input: prefix', { missing: ['prefix'] });
-  }
-  
-  // Generate 15 mock labels
-  const results = [];
-  for (let i = 0; i < 15; i++) {
-    results.push({
-      name: `${prefix}${i + 1}`,
-      prefix: prefix
-    });
-  }
-  
-  // Create mock pagination info
-  const pagination = {
-    start: start,
-    limit: limit,
-    size: results.length,
-    _links: {
-      next: results.length < 100 ? "/rest/api/label?start=15&limit=15" : undefined,
-      prev: start > 0 ? "/rest/api/label?start=0&limit=15" : undefined
-    }
-  };
-  
-  return { results, pagination };
-}
+// Remaining Confluence API handler
 
 
 async function handleSearchPages(params: any) {
@@ -245,34 +92,20 @@ async function handleSearchPages(params: any) {
   const email = process.env.CONFLUENCE_EMAIL;
   const token = process.env.CONFLUENCE_API_TOKEN;
 
-  // If we don't have credentials, return mock data
+  // Require Confluence credentials
   if (!baseUrl || !email || !token) {
-    console.log("No Confluence credentials found, using mock data");
-    
-    // Use the default Confluence domain set at the top of the file
-    const results = generateMockResults(query, 20);
-    
-    // Create mock pagination info
-    const pagination = {
-      start: start,
-      limit: limit,
-      size: results.length,
-      totalSize: 100,
-      nextCursor: results.length < 100 ? "mock-next-cursor" : undefined,
-      prevCursor: start > 0 ? "mock-prev-cursor" : undefined,
-      nextUrl: results.length < 100 ? "https://example.com/next" : undefined,
-      prevUrl: start > 0 ? "https://example.com/prev" : undefined
-    };
-    
-    return { 
-      cql: `type=page and text ~ ${query}`,
-      results,
-      pagination
-    };
+    console.error("No Confluence credentials found. Please set CONFLUENCE_BASE_URL, CONFLUENCE_EMAIL, and CONFLUENCE_API_TOKEN environment variables.");
+    return toolError('CONFIGURATION_ERROR', 'Confluence credentials not configured', { 
+      missing: [
+        !baseUrl ? 'CONFLUENCE_BASE_URL' : null,
+        !email ? 'CONFLUENCE_EMAIL' : null, 
+        !token ? 'CONFLUENCE_API_TOKEN' : null
+      ].filter(Boolean)
+    });
   }
   
-  // We have credentials, use the real Confluence API
-  console.log("Using real Confluence API");
+  // Use the real Confluence API
+  console.log("Using Confluence API");
   try {
     // Construct the CQL query
     let cql = `type=page and text ~ "${query}"`;
@@ -305,23 +138,15 @@ async function handleSearchPages(params: any) {
         const text = await res.text().catch(() => '');
         console.error(`Confluence API error: ${res.status} - ${text || res.statusText}`);
         
-        // Fall back to mock data on error
-        const results = generateMockResults(query, 20);
-        const pagination = {
-          start: start,
-          limit: limit,
-          size: results.length,
-          totalSize: 100,
-          nextCursor: undefined,
-          prevCursor: undefined,
-          nextUrl: undefined,
-          prevUrl: undefined
-        };
-        
         return { 
           cql,
-          results,
-          pagination,
+          results: [],
+          pagination: {
+            start: start,
+            limit: limit,
+            size: 0,
+            totalSize: 0
+          },
           error: `API error: ${res.status} - ${text || res.statusText}`
         };
       }
@@ -341,10 +166,8 @@ async function handleSearchPages(params: any) {
           url = r.url;
         }
         
-        // Get excerpt
-        let excerpt = r?.excerpt || '';
-        
-        return { id, title, url, excerpt };
+        // Excerpt removed as requested
+        return { id, title, url };
       });
       
       collected.push(...pageItems);
@@ -381,23 +204,15 @@ async function handleSearchPages(params: any) {
   } catch (error: any) {
     console.error("Error fetching from Confluence API:", error);
     
-    // Fall back to mock data on error
-    const results = generateMockResults(query, 20);
-    const pagination = {
-      start: start,
-      limit: limit,
-      size: results.length,
-      totalSize: 100,
-      nextCursor: undefined,
-      prevCursor: undefined,
-      nextUrl: undefined,
-      prevUrl: undefined
-    };
-    
     return { 
-      cql: `type=page and text ~ ${query}`,
-      results,
-      pagination,
+      cql: `type=page and text ~ "${query}"`,
+      results: [],
+      pagination: {
+        start: start,
+        limit: limit,
+        size: 0,
+        totalSize: 0
+      },
       error: `Exception: ${error.message || 'Unknown error'}`
     };
   }
@@ -549,9 +364,6 @@ const mcpHandler = async (req: Request, res: Response) => {
       switch (name) {
         case 'searchPages':
           out = await handleSearchPages(args);
-          break;
-        case 'listSpaces':
-          out = await handleListSpaces(args);
           break;
         case 'describeTools':
           out = await handleDescribeTools(args);
