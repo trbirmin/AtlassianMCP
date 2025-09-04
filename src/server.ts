@@ -67,7 +67,7 @@ function getToolDescriptors() {
         properties: {
           query: { type: 'string', description: 'Free-text query to search in page titles and content' },
           spaceKey: { type: 'string', description: 'Optional Confluence space key to restrict the search' },
-          limit: { type: 'number', description: 'Page size per request (default 50, max 100; service may cap to 50)' },
+          limit: { type: 100 , description: 'Page size per request (default 50, max 100; service may cap to 50)' },
           start: { type: 'number', description: 'Offset index for pagination (ignored when cursor is provided)' },
           cursor: { type: 'string', description: 'Opaque cursor from a previous response for next/prev page' },
           includeArchivedSpaces: { type: 'boolean', description: 'Include archived spaces in results' },
