@@ -47,11 +47,11 @@ function getToolDescriptors() {
         properties: {
           query: { type: 'string', description: 'Free-text query to search in page titles and content' },
           spaceKey: { type: 'string', description: 'Optional Confluence space key to restrict the search' },
-          limit: { type: 'number' , description: 'Page size per request (default 50, max 100; service may cap to 50)' },
+          limit: { type: 'number' , description: 'Page size per request (default 100, max 100; service may cap to 50)' },
           start: { type: 'number', description: 'Offset index for pagination (ignored when cursor is provided)' },
           cursor: { type: 'string', description: 'Opaque cursor from a previous response for next/prev page' },
           includeArchivedSpaces: { type: 'boolean', description: 'Include archived spaces in results' },
-          maxResults: { type: 'number' , description: 'Maximum number of results to return (default 50)' },
+          maxResults: { type: 'number' , description: 'Maximum number of results to return (default 100)' },
         },
         required: ['query'],
         additionalProperties: false,
@@ -76,12 +76,12 @@ function getToolDescriptors() {
 async function handleSearchPages(params: any) {
   const query = String((params?.query ?? params?.q ?? params?.text ?? params?.question) || '').trim();
   const spaceKey = String(params?.spaceKey || '').trim();
-  const limit = Math.min(Math.max(Number(params?.limit) || 50, 1), 100);
+  const limit = Math.min(Math.max(Number(params?.limit) || 100, 1), 100);
   const start = Number(params?.start) || 0;
   const cursor = String(params?.cursor || '').trim();
   
-  // Always use 50 for maximum results - no special case needed for "all results" phrases
-  const defaultMaxResults = 50;
+  // Always use 100 for maximum results - no special case needed for "all results" phrases
+  const defaultMaxResults = 100;
   
   // Set maxResults with appropriate limits to avoid token overflow
   const maxResults = Math.max(Number.isFinite(Number(params?.maxResults)) ? Number(params?.maxResults) : defaultMaxResults, 0);
@@ -374,7 +374,7 @@ const mcpHandler = async (req: Request, res: Response) => {
       capabilities: { tools: { list: true, call: true } },
       tools: getToolDescriptors(),
       instructions:
-        'Policy: When the user asks about Confluence content, always call the searchPages tool and return the results. Default to the searchPages tool for any query: set query to the user text. CRITICAL REQUIREMENT: You MUST display EVERY SINGLE result returned by the tool - do not stop at 10, do not summarize, do not truncate. Show ALL results (up to 50) with each result on its own numbered line showing the title and URL. Never say "here are some of the results" - show them ALL.',
+        'Policy: When the user asks about Confluence content, always call the searchPages tool and return the results. Default to the searchPages tool for any query: set query to the user text. CRITICAL REQUIREMENT: You MUST display EVERY SINGLE result returned by the tool - do not stop at 10, do not summarize, do not truncate. Show ALL results (up to 100) with each result on its own numbered line showing the title and URL. Never say "here are some of the results" - show them ALL.',
     };
     return sendJson(res, { jsonrpc: '2.0', id: id ?? null, result });
   }
@@ -403,7 +403,7 @@ const mcpHandler = async (req: Request, res: Response) => {
         capabilities: { tools: { list: true, call: true } },
         tools: getToolDescriptors(),
         instructions:
-          'Policy: When the user asks about Confluence content, always call the searchPages tool and return the results. Default to the searchPages tool for any query: set query to the user text. CRITICAL REQUIREMENT: You MUST display EVERY SINGLE result returned by the tool - do not stop at 10, do not summarize, do not truncate. Show ALL results (up to 50) with each result on its own numbered line showing the title and URL. Never say "here are some of the results" - show them ALL.',
+          'Policy: When the user asks about Confluence content, always call the searchPages tool and return the results. Default to the searchPages tool for any query: set query to the user text. CRITICAL REQUIREMENT: You MUST display EVERY SINGLE result returned by the tool - do not stop at 10, do not summarize, do not truncate. Show ALL results (up to 100) with each result on its own numbered line showing the title and URL. Never say "here are some of the results" - show them ALL.',
       },
     });
   }

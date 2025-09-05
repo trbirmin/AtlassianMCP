@@ -105,9 +105,10 @@ For an expanded, screenshot-ready walkthrough, see `docs/CONNECTOR.md`.
 
 ## MCP basics implemented
 - initialize, tools/list, tools/call with friendly JSON-RPC errors
-- Confluence search integration with real API
+- Confluence search integration with real API (returns up to 100 results)
 - Automatic initialization of MCP tools before handling requests
 - Session tracking for stateful interactions
+- Enhanced result display with explicit instructions to show all results
 
 ## Troubleshooting
 - Make sure all three Confluence variables are set: `CONFLUENCE_BASE_URL`, `CONFLUENCE_EMAIL`, and `CONFLUENCE_API_TOKEN`
