@@ -47,11 +47,11 @@ function getToolDescriptors() {
         properties: {
           query: { type: 'string', description: 'Free-text query to search in page titles and content' },
           spaceKey: { type: 'string', description: 'Optional Confluence space key to restrict the search' },
-          limit: { type: 'number' , description: 'Page size per request (default 100, max 100; service may cap to 50)' },
+          limit: { type: 'number' , description: 'Page size per request (default 50, max 100; service may cap to 50)' },
           start: { type: 'number', description: 'Offset index for pagination (ignored when cursor is provided)' },
           cursor: { type: 'string', description: 'Opaque cursor from a previous response for next/prev page' },
           includeArchivedSpaces: { type: 'boolean', description: 'Include archived spaces in results' },
-          maxResults: { type: 'number' , description: 'Maximum number of results to return (default 100)' },
+          maxResults: { type: 'number' , description: 'Maximum number of results to return (default 50)' },
         },
         required: ['query'],
         additionalProperties: false,
@@ -76,34 +76,15 @@ function getToolDescriptors() {
 async function handleSearchPages(params: any) {
   const query = String((params?.query ?? params?.q ?? params?.text ?? params?.question) || '').trim();
   const spaceKey = String(params?.spaceKey || '').trim();
-  const limit = Math.min(Math.max(Number(params?.limit) || 100, 1), 100);
+  const limit = Math.min(Math.max(Number(params?.limit) || 50, 1), 100);
   const start = Number(params?.start) || 0;
   const cursor = String(params?.cursor || '').trim();
   
-  // Use 100 for maximum results, but allow dynamic reduction to avoid token overflow
-  const defaultMaxResults = 100;
-  
-  // Allow environment variable to override token limit (default: 3000)
-  const maxTokensForResults = Number(process.env.MAX_TOKENS_FOR_RESULTS) || 3000;
+  // Always use 50 for maximum results - no special case needed for "all results" phrases
+  const defaultMaxResults = 50;
   
   // Set maxResults with appropriate limits to avoid token overflow
   const maxResults = Math.max(Number.isFinite(Number(params?.maxResults)) ? Number(params?.maxResults) : defaultMaxResults, 0);
-  
-  // Function to estimate token count (rough approximation: 1 token ≈ 4 characters)
-  const estimateTokens = (text: string) => Math.ceil(text.length / 4);
-  
-  // Function to check if results would exceed token limit
-  const checkTokenLimit = (results: any[], maxTokens = 3000) => {
-    let totalTokens = 0;
-    for (const result of results) {
-      const resultText = `${result.title} ${result.url}`;
-      totalTokens += estimateTokens(resultText);
-      if (totalTokens > maxTokens) {
-        return false;
-      }
-    }
-    return true;
-  };
   
   // Always auto-paginate, but respect the maxResults limit
   const autoPaginate = true;
@@ -221,52 +202,23 @@ async function handleSearchPages(params: any) {
     
     console.log(`Search complete. Total results: ${collected.length}, pages fetched: ${pageCount}`);
     
-    // Prepare the results - start with maxResults and reduce if token limit would be exceeded
-    let results = collected.slice(0, maxResults);
-    
-    // Check if results would exceed token limit and reduce if necessary
-    if (!checkTokenLimit(results, maxTokensForResults)) {
-      console.log(`Results would exceed token limit (${maxTokensForResults} tokens), reducing from ${results.length}...`);
-      
-      // Binary search to find the maximum number of results that fit within token limit
-      let low = 1;
-      let high = results.length;
-      let bestCount = 1;
-      
-      while (low <= high) {
-        const mid = Math.floor((low + high) / 2);
-        const testResults = results.slice(0, mid);
-        
-        if (checkTokenLimit(testResults, maxTokensForResults)) {
-          bestCount = mid;
-          low = mid + 1;
-        } else {
-          high = mid - 1;
-        }
-      }
-      
-      results = results.slice(0, bestCount);
-      console.log(`Reduced results to ${results.length} to stay within token limit`);
-    }
+    // Prepare the results - strictly enforce the maxResults limit
+    const results = collected.slice(0, maxResults);
     
     // Log the exact number of results being returned
     console.log(`Returning ${results.length} results to the client`);
     
     // If we have results, add a summary to the first result's title
     if (results.length > 0) {
-      const wasReduced = results.length < Math.min(collected.length, maxResults);
-      const reductionNote = wasReduced ? " (REDUCED TO FIT TOKEN LIMIT)" : "";
-      results[0].title = `DISPLAY ALL ${results.length} RESULTS BELOW - DO NOT STOP AT 10${reductionNote} - ${results[0].title}`;
+      results[0].title = `DISPLAY ALL ${results.length} RESULTS BELOW - DO NOT STOP AT 10 - ${results[0].title}`;
     }
     
     // Force include total count in the results object itself so the client knows how many results we're returning
-    const wasReduced = results.length < Math.min(collected.length, maxResults);
     const resultWithCount = {
       items: results,
       count: results.length,
       totalAvailable: collected.length,
-      wasReducedForTokens: wasReduced,
-      displayInstructions: `CRITICAL: Display all ${results.length} results. Do not truncate to 10. Show every single result with its title and URL.${wasReduced ? ' Note: Results were reduced to fit within token limits.' : ''}`
+      displayInstructions: `CRITICAL: Display all ${results.length} results. Do not truncate to 10. Show every single result with its title and URL.`
     };
     
     const data = firstPage || { start: start || 0, limit, size: results.length, _links: {} };
@@ -289,11 +241,10 @@ async function handleSearchPages(params: any) {
     
     return { 
       cql, 
-      resultSummary: `Found ${resultWithCount.count} results out of ${resultWithCount.totalAvailable} total matches for "${query}"${resultWithCount.wasReducedForTokens ? ' (reduced to fit token limits)' : ''} - DISPLAY ALL ${resultWithCount.count} RESULTS BELOW`,
+      resultSummary: `Found ${resultWithCount.count} results out of ${resultWithCount.totalAvailable} total matches for "${query}" - DISPLAY ALL ${resultWithCount.count} RESULTS BELOW`,
       results: resultWithCount.items, 
       resultCount: resultWithCount.count, 
       totalAvailable: resultWithCount.totalAvailable, 
-      wasReducedForTokens: resultWithCount.wasReducedForTokens,
       displayInstructions: resultWithCount.displayInstructions,
       pagination 
     };
@@ -423,7 +374,7 @@ const mcpHandler = async (req: Request, res: Response) => {
       capabilities: { tools: { list: true, call: true } },
       tools: getToolDescriptors(),
       instructions:
-        'Policy: When the user asks about Confluence content, always call the searchPages tool and return the results. Default to the searchPages tool for any query: set query to the user text. CRITICAL REQUIREMENT: You MUST display EVERY SINGLE result returned by the tool - do not stop at 10, do not summarize, do not truncate. Show ALL results (up to 100) with each result on its own numbered line showing the title and URL. Never say "here are some of the results" - show them ALL.',
+        'Policy: When the user asks about Confluence content, always call the searchPages tool and return the results. Default to the searchPages tool for any query: set query to the user text. CRITICAL REQUIREMENT: You MUST display EVERY SINGLE result returned by the tool - do not stop at 10, do not summarize, do not truncate. Show ALL results (up to 50) with each result on its own numbered line showing the title and URL. Never say "here are some of the results" - show them ALL.',
     };
     return sendJson(res, { jsonrpc: '2.0', id: id ?? null, result });
   }
@@ -452,7 +403,7 @@ const mcpHandler = async (req: Request, res: Response) => {
         capabilities: { tools: { list: true, call: true } },
         tools: getToolDescriptors(),
         instructions:
-          'Policy: When the user asks about Confluence content, always call the searchPages tool and return the results. Default to the searchPages tool for any query: set query to the user text. CRITICAL REQUIREMENT: You MUST display EVERY SINGLE result returned by the tool - do not stop at 10, do not summarize, do not truncate. Show ALL results (up to 100) with each result on its own numbered line showing the title and URL. Never say "here are some of the results" - show them ALL.',
+          'Policy: When the user asks about Confluence content, always call the searchPages tool and return the results. Default to the searchPages tool for any query: set query to the user text. CRITICAL REQUIREMENT: You MUST display EVERY SINGLE result returned by the tool - do not stop at 10, do not summarize, do not truncate. Show ALL results (up to 50) with each result on its own numbered line showing the title and URL. Never say "here are some of the results" - show them ALL.',
       },
     });
   }
