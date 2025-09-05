@@ -80,10 +80,7 @@ async function handleSearchPages(params: any) {
   const start = Number(params?.start) || 0;
   const cursor = String(params?.cursor || '').trim();
   
-  // Check if the query explicitly asks for "all results"
-  const requestsAllResults = /\b(all|every|full|complete)\s+(result|results|page|pages|record|records)\b/i.test(query);
-  
-  // Always use 50 for maximum results
+  // Always use 50 for maximum results - no special case needed for "all results" phrases
   const defaultMaxResults = 50;
   
   // Set maxResults with appropriate limits to avoid token overflow
@@ -92,7 +89,7 @@ async function handleSearchPages(params: any) {
   // Always auto-paginate, but respect the maxResults limit
   const autoPaginate = true;
   
-  console.log(`Search query: "${query}", maxResults: ${maxResults}, requestsAllResults: ${requestsAllResults}`);
+  console.log(`Search query: "${query}", maxResults: ${maxResults}`);
   
   if (!query) {
     return toolError('MISSING_INPUT', 'Missing required input: query', { missing: ['query'] });
