@@ -210,14 +210,15 @@ async function handleSearchPages(params: any) {
     
     // If we have results, add a summary to the first result's title
     if (results.length > 0) {
-      results[0].title = `FOUND: ${results.length} results (out of ${collected.length} total matches) - ${results[0].title}`;
+      results[0].title = `DISPLAY ALL ${results.length} RESULTS BELOW - DO NOT STOP AT 10 - ${results[0].title}`;
     }
     
     // Force include total count in the results object itself so the client knows how many results we're returning
     const resultWithCount = {
       items: results,
       count: results.length,
-      totalAvailable: collected.length
+      totalAvailable: collected.length,
+      displayInstructions: `CRITICAL: Display all ${results.length} results. Do not truncate to 10. Show every single result with its title and URL.`
     };
     
     const data = firstPage || { start: start || 0, limit, size: results.length, _links: {} };
@@ -240,10 +241,11 @@ async function handleSearchPages(params: any) {
     
     return { 
       cql, 
-      resultSummary: `Found ${resultWithCount.count} results out of ${resultWithCount.totalAvailable} total matches for "${query}"`,
+      resultSummary: `Found ${resultWithCount.count} results out of ${resultWithCount.totalAvailable} total matches for "${query}" - DISPLAY ALL ${resultWithCount.count} RESULTS BELOW`,
       results: resultWithCount.items, 
       resultCount: resultWithCount.count, 
       totalAvailable: resultWithCount.totalAvailable, 
+      displayInstructions: resultWithCount.displayInstructions,
       pagination 
     };
   } catch (error: any) {
@@ -372,7 +374,7 @@ const mcpHandler = async (req: Request, res: Response) => {
       capabilities: { tools: { list: true, call: true } },
       tools: getToolDescriptors(),
       instructions:
-        'Policy: When the user asks about Confluence content, always call the searchPages tool and return the results. Default to the searchPages tool for any query: set query to the user text. IMPORTANT: ALWAYS display ALL returned results to the user (up to 50). Do not truncate or summarize the results list. Format each result on its own line with the title and URL.',
+        'Policy: When the user asks about Confluence content, always call the searchPages tool and return the results. Default to the searchPages tool for any query: set query to the user text. CRITICAL REQUIREMENT: You MUST display EVERY SINGLE result returned by the tool - do not stop at 10, do not summarize, do not truncate. Show ALL results (up to 50) with each result on its own numbered line showing the title and URL. Never say "here are some of the results" - show them ALL.',
     };
     return sendJson(res, { jsonrpc: '2.0', id: id ?? null, result });
   }
@@ -401,7 +403,7 @@ const mcpHandler = async (req: Request, res: Response) => {
         capabilities: { tools: { list: true, call: true } },
         tools: getToolDescriptors(),
         instructions:
-          'Policy: When the user asks about Confluence content, always call the searchPages tool and return the results. Default to the searchPages tool for any query: set query to the user text. IMPORTANT: ALWAYS display ALL returned results to the user (up to 50). Do not truncate or summarize the results list. Format each result on its own line with the title and URL.',
+          'Policy: When the user asks about Confluence content, always call the searchPages tool and return the results. Default to the searchPages tool for any query: set query to the user text. CRITICAL REQUIREMENT: You MUST display EVERY SINGLE result returned by the tool - do not stop at 10, do not summarize, do not truncate. Show ALL results (up to 50) with each result on its own numbered line showing the title and URL. Never say "here are some of the results" - show them ALL.',
       },
     });
   }
