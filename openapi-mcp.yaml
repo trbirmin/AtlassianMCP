@@ -1,7 +1,7 @@
 swagger: '2.0'
 info:
   title: Atlassian MCP Server
-  description: MCP Server using Streamable HTTP transport for Copilot Studio - supports up to 100 Confluence search results (JSON-first; optional SSE)
+  description: MCP Server using Streamable HTTP transport for Copilot Studio - supports up to 100 Confluence search results with dynamic token management to prevent overflow (JSON-first; optional SSE)
   version: 0.1.1
 host: atlassian-mcp.azurewebsites.net
 basePath: /

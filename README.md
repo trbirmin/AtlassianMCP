@@ -47,6 +47,7 @@ npm run dev
     - `CONFLUENCE_BASE_URL`: Your Confluence base URL (required)
     - `CONFLUENCE_EMAIL`: Your Atlassian account email (required)
     - `CONFLUENCE_API_TOKEN`: Your Atlassian API token (required)
+    - `MAX_TOKENS_FOR_RESULTS`: Maximum tokens for search results to avoid bot overflow (optional, default: 3000)
     - For real Confluence API integration (optional):
       - `CONFLUENCE_BASE_URL`: Full URL (e.g., https://your-domain.atlassian.net)
       - `CONFLUENCE_EMAIL`: Your Atlassian account email
@@ -105,15 +106,18 @@ For an expanded, screenshot-ready walkthrough, see `docs/CONNECTOR.md`.
 
 ## MCP basics implemented
 - initialize, tools/list, tools/call with friendly JSON-RPC errors
-- Confluence search integration with real API (returns up to 100 results)
+- Confluence search integration with real API (returns up to 100 results with dynamic token management)
 - Automatic initialization of MCP tools before handling requests
 - Session tracking for stateful interactions
 - Enhanced result display with explicit instructions to show all results
+- Dynamic token management to prevent response overflow errors
 
 ## Troubleshooting
 - Make sure all three Confluence variables are set: `CONFLUENCE_BASE_URL`, `CONFLUENCE_EMAIL`, and `CONFLUENCE_API_TOKEN`
 - Check the server logs for error messages and warnings
 - Verify the server is accessible from your Copilot Studio by testing the connection
+- If you get "OpenAIMaxTokenLengthExceeded" errors, the server will automatically reduce results to fit within token limits
+- You can adjust the token limit by setting `MAX_TOKENS_FOR_RESULTS` environment variable (default: 3000)
 
 ## Testing Confluence Credentials
 

@@ -80,11 +80,30 @@ async function handleSearchPages(params: any) {
   const start = Number(params?.start) || 0;
   const cursor = String(params?.cursor || '').trim();
   
-  // Always use 100 for maximum results - no special case needed for "all results" phrases
+  // Use 100 for maximum results, but allow dynamic reduction to avoid token overflow
   const defaultMaxResults = 100;
+  
+  // Allow environment variable to override token limit (default: 3000)
+  const maxTokensForResults = Number(process.env.MAX_TOKENS_FOR_RESULTS) || 3000;
   
   // Set maxResults with appropriate limits to avoid token overflow
   const maxResults = Math.max(Number.isFinite(Number(params?.maxResults)) ? Number(params?.maxResults) : defaultMaxResults, 0);
+  
+  // Function to estimate token count (rough approximation: 1 token ≈ 4 characters)
+  const estimateTokens = (text: string) => Math.ceil(text.length / 4);
+  
+  // Function to check if results would exceed token limit
+  const checkTokenLimit = (results: any[], maxTokens = 3000) => {
+    let totalTokens = 0;
+    for (const result of results) {
+      const resultText = `${result.title} ${result.url}`;
+      totalTokens += estimateTokens(resultText);
+      if (totalTokens > maxTokens) {
+        return false;
+      }
+    }
+    return true;
+  };
   
   // Always auto-paginate, but respect the maxResults limit
   const autoPaginate = true;
@@ -202,23 +221,52 @@ async function handleSearchPages(params: any) {
     
     console.log(`Search complete. Total results: ${collected.length}, pages fetched: ${pageCount}`);
     
-    // Prepare the results - strictly enforce the maxResults limit
-    const results = collected.slice(0, maxResults);
+    // Prepare the results - start with maxResults and reduce if token limit would be exceeded
+    let results = collected.slice(0, maxResults);
+    
+    // Check if results would exceed token limit and reduce if necessary
+    if (!checkTokenLimit(results, maxTokensForResults)) {
+      console.log(`Results would exceed token limit (${maxTokensForResults} tokens), reducing from ${results.length}...`);
+      
+      // Binary search to find the maximum number of results that fit within token limit
+      let low = 1;
+      let high = results.length;
+      let bestCount = 1;
+      
+      while (low <= high) {
+        const mid = Math.floor((low + high) / 2);
+        const testResults = results.slice(0, mid);
+        
+        if (checkTokenLimit(testResults, maxTokensForResults)) {
+          bestCount = mid;
+          low = mid + 1;
+        } else {
+          high = mid - 1;
+        }
+      }
+      
+      results = results.slice(0, bestCount);
+      console.log(`Reduced results to ${results.length} to stay within token limit`);
+    }
     
     // Log the exact number of results being returned
     console.log(`Returning ${results.length} results to the client`);
     
     // If we have results, add a summary to the first result's title
     if (results.length > 0) {
-      results[0].title = `DISPLAY ALL ${results.length} RESULTS BELOW - DO NOT STOP AT 10 - ${results[0].title}`;
+      const wasReduced = results.length < Math.min(collected.length, maxResults);
+      const reductionNote = wasReduced ? " (REDUCED TO FIT TOKEN LIMIT)" : "";
+      results[0].title = `DISPLAY ALL ${results.length} RESULTS BELOW - DO NOT STOP AT 10${reductionNote} - ${results[0].title}`;
     }
     
     // Force include total count in the results object itself so the client knows how many results we're returning
+    const wasReduced = results.length < Math.min(collected.length, maxResults);
     const resultWithCount = {
       items: results,
       count: results.length,
       totalAvailable: collected.length,
-      displayInstructions: `CRITICAL: Display all ${results.length} results. Do not truncate to 10. Show every single result with its title and URL.`
+      wasReducedForTokens: wasReduced,
+      displayInstructions: `CRITICAL: Display all ${results.length} results. Do not truncate to 10. Show every single result with its title and URL.${wasReduced ? ' Note: Results were reduced to fit within token limits.' : ''}`
     };
     
     const data = firstPage || { start: start || 0, limit, size: results.length, _links: {} };
@@ -241,10 +289,11 @@ async function handleSearchPages(params: any) {
     
     return { 
       cql, 
-      resultSummary: `Found ${resultWithCount.count} results out of ${resultWithCount.totalAvailable} total matches for "${query}" - DISPLAY ALL ${resultWithCount.count} RESULTS BELOW`,
+      resultSummary: `Found ${resultWithCount.count} results out of ${resultWithCount.totalAvailable} total matches for "${query}"${resultWithCount.wasReducedForTokens ? ' (reduced to fit token limits)' : ''} - DISPLAY ALL ${resultWithCount.count} RESULTS BELOW`,
       results: resultWithCount.items, 
       resultCount: resultWithCount.count, 
       totalAvailable: resultWithCount.totalAvailable, 
+      wasReducedForTokens: resultWithCount.wasReducedForTokens,
       displayInstructions: resultWithCount.displayInstructions,
       pagination 
     };
